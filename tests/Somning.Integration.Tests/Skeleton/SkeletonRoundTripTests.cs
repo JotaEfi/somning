@@ -2,6 +2,9 @@ using System.Diagnostics;
 using Somning.Core.Text;
 using Somning.Integration.Tests.Support;
 using Xunit;
+using Somning.App.Engine;
+using Somning.Core.Engine;
+using Somning.Engine.Protocol;
 namespace Somning.Integration.Tests.Skeleton;
 public sealed class SkeletonRoundTripTests
 {
@@ -14,6 +17,15 @@ public sealed class SkeletonRoundTripTests
         var expected = File.ReadAllText(Path.Combine(RepoPaths.Fixtures, "tracer", "hoje.txt"));
         var actual = ClipboardProbe.ReadText();
         Assert.True(Wer.Compute(expected, actual) <= .1, actual);
+    }
+    [Fact]
+    public async Task Clipboard_held_exits_11()
+    {
+        Requires.Models(); Requires.Desktop();
+        using var holder = new ClipboardHolder();
+        var (exit, log) = await RunAppAsync();
+        Assert.Equal(11, exit); Assert.Contains("clipboard_failed", log);
+        Assert.DoesNotContain("Hoje vamos testar", log);
     }
     internal static async Task<(int Exit, string Log)> RunAppAsync()
     {
@@ -34,5 +46,27 @@ public sealed class SkeletonRoundTripTests
             if (!process.HasExited) { process.Kill(entireProcessTree: true); await process.WaitForExitAsync(); }
             if (Directory.Exists(data)) Directory.Delete(data, recursive: true);
         }
+    }
+}
+public sealed class ProtocolMappingTests
+{
+    private static readonly EngineSessionInfo Session = new("vulkan", "test-model", 1200, 800, true, true);
+    [Theory]
+    [InlineData(ErrorCodes.InvalidPath, false)]
+    [InlineData(ErrorCodes.BadRequest, false)]
+    [InlineData(ErrorCodes.GpuError, true)]
+    public void Maps_retryability(string code, bool retryable)
+    {
+        var mapped = ProtocolMapping.Map(new ErrorMessage("id", code, "private error text"), Session);
+        Assert.Equal("error", mapped.Outcome); Assert.Equal(code, mapped.ErrorCode);
+        Assert.Equal(retryable, mapped.Retryable);
+    }
+    [Fact]
+    public void Carries_session_load_and_warm_timings()
+    {
+        var mapped = ProtocolMapping.Map(new ResultMessage("id", "Olá.", "text", null, 100, 2, 30, 0,
+            "vulkan", "test-model"), Session);
+        Assert.Equal(1200, mapped.LoadMs); Assert.Equal(800, mapped.WarmMs);
+        Assert.Equal("Olá.", mapped.Text);
     }
 }

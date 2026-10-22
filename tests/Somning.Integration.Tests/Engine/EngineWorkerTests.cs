@@ -28,5 +28,54 @@ public sealed class EngineWorkerTests : IDisposable
         await client.SendAsync(new ShutdownRequest());
         Assert.Equal(0, await client.WaitForExitAsync(TimeSpan.FromSeconds(10)));
     }
+    [Fact]
+    public async Task Cancel_active_request()
+    {
+        var wav = Fixture();
+        using var client = new EngineWorkerClient(allowed, fault: "slow_transcribe");
+        await client.ReadyAsync();
+        await client.SendAsync(new TranscribeRequest("A", wav));
+        await client.SendAsync(new CancelRequest("A"));
+        var error = Assert.IsType<ErrorMessage>(await client.ReadMessageAsync(TimeSpan.FromSeconds(5)));
+        Assert.Equal("A", error.Id); Assert.Equal(ErrorCodes.Cancelled, error.Code);
+        await client.SendAsync(new ShutdownRequest());
+        Assert.Equal(0, await client.WaitForExitAsync(TimeSpan.FromSeconds(5)));
+    }
+    [Fact]
+    public async Task Cancel_queued_request()
+    {
+        var wav = Fixture();
+        using var client = new EngineWorkerClient(allowed, fault: "slow_transcribe");
+        await client.ReadyAsync();
+        await client.SendAsync(new TranscribeRequest("A", wav));
+        await client.SendAsync(new TranscribeRequest("B", wav));
+        await client.SendAsync(new CancelRequest("B"));
+        var error = Assert.IsType<ErrorMessage>(await client.ReadMessageAsync(TimeSpan.FromSeconds(5)));
+        Assert.Equal("B", error.Id); Assert.Equal(ErrorCodes.Cancelled, error.Code);
+        await client.SendAsync(new ShutdownRequest());
+        Assert.Equal(0, await client.WaitForExitAsync(TimeSpan.FromSeconds(5)));
+    }
+    [Fact]
+    public async Task Shutdown_during_inference_is_bounded()
+    {
+        var wav = Fixture();
+        using var client = new EngineWorkerClient(allowed, fault: "slow_transcribe");
+        await client.ReadyAsync();
+        await client.SendAsync(new TranscribeRequest("A", wav));
+        await client.SendAsync(new ShutdownRequest());
+        Assert.Equal(0, await client.WaitForExitAsync(TimeSpan.FromSeconds(5)));
+    }
+    [Fact]
+    public async Task Sibling_prefix_path_is_rejected()
+    {
+        Fixture();
+        using var client = new EngineWorkerClient(allowed);
+        await client.ReadyAsync();
+        await client.SendAsync(new TranscribeRequest("invalid", allowed + "-other/hoje.wav"));
+        var error = Assert.IsType<ErrorMessage>(await client.ReadMessageAsync(TimeSpan.FromSeconds(5)));
+        Assert.Equal(ErrorCodes.InvalidPath, error.Code);
+        await client.SendAsync(new ShutdownRequest());
+        Assert.Equal(0, await client.WaitForExitAsync(TimeSpan.FromSeconds(5)));
+    }
     public void Dispose() { if (Directory.Exists(allowed)) Directory.Delete(allowed, true); }
 }

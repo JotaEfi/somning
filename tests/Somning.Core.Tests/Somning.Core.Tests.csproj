@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework><OutputType>Exe</OutputType></PropertyGroup><ItemGroup><PackageReference Include="xunit.v3" /><ProjectReference Include="../../src/Somning.Core/Somning.Core.csproj" /><ProjectReference Include="../../src/Somning.Engine.Protocol/Somning.Engine.Protocol.csproj" /></ItemGroup></Project>

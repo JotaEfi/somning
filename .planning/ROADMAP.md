@@ -24,17 +24,22 @@ Somning goes from a headless, agent-verifiable dictation loop (hotkey, mic, loca
   3. Silence-only, noise-only, and very short (< ~0.4 s) fixtures paste nothing and never produce hallucinations such as "Obrigado." or "Amara.org"
   4. Killing the engine worker or forcing GPU failure mid-run restarts it in CPU mode without crashing the app; a recording interrupted by a crash is recovered from its spool WAV on restart
   5. Pasting while the target window changed or is elevated leaves the text on the clipboard and logs a manual-paste outcome; every dictation logs capture, load, inference and paste timings with API keys redacted
-**Plans:** 8 plans
+**Plans:** 13 plans
 
-Plans:
-- [ ] 01-01-PLAN.md — Walking skeleton: solution + engine worker + WAV→clipboard tracer; Win10 published-build gate; model fetch (wave 1)
-- [ ] 01-02-PLAN.md — Global hotkey: LL hook chord suppression + TriggerInterpreter tap/hold (wave 2)
-- [ ] 01-03-PLAN.md — Audio: WASAPI/file capture → 16 kHz spool + sidecar, crash durability, recovery rules (wave 2)
-- [ ] 01-04-PLAN.md — Output: clipboard + target-aware Ctrl+V, PasteGate/UIPI deferral (wave 2)
-- [ ] 01-05-PLAN.md — Quality: pt-BR fixtures, VAD/hallucination gate, accuracy, benchmark → BENCHMARK.md defaults (wave 2)
-- [ ] 01-06-PLAN.md — Engine resilience: restart-in-CPU + retry, restart cap, queue-before-ready (wave 2)
-- [ ] 01-07-PLAN.md — Dictation loop: reducer + App wiring, metrics log line, startup recovery, harness pipe (wave 3)
-- [ ] 01-08-PLAN.md — Phase acceptance: Notepad E2E for SC2–SC5, published App re-check, verify-phase1.ps1 (wave 4)
+Plans (all execution and verification sequential):
+- [ ] 01-01-PLAN.md - Worker/protocol tracer, published gate and model fetch (wave 1)
+- [ ] 01-02-PLAN.md - App-worker-clipboard skeleton and Core contracts (wave 2)
+- [ ] 01-03-PLAN.md - Global hook, tap/hold and long-hold watchdog (wave 3)
+- [ ] 01-04-PLAN.md - Target/focus validation and safe paste (wave 3)
+- [ ] 01-05-PLAN.md - Fixtures, CPU VAD and whole-output filter (wave 3)
+- [ ] 01-06-PLAN.md - Durable capture, spool and recovery policy (wave 4)
+- [ ] 01-07-PLAN.md - CPU restart/retry and queued readiness (wave 4)
+- [ ] 01-08-PLAN.md - Isolated full benchmark and selected defaults (wave 5)
+- [ ] 01-09-PLAN.md - Pure reducer, admission and complete metrics (wave 6)
+- [ ] 01-10-PLAN.md - App owner loop and ordered effects (wave 7)
+- [ ] 01-11-PLAN.md - Startup recovery and replayable harness (wave 8)
+- [ ] 01-12-PLAN.md - Notepad/silence/crash and latency E2E (wave 9)
+- [ ] 01-13-PLAN.md - Focus/metrics, published App and final verifier (wave 10)
 
 ### Phase 2: Overlay, Tray, Settings & Cancel
 **Goal**: User can live with Somning day to day: a visible non-intrusive pill, tray control, persisted settings, cancel, and a first-run model download

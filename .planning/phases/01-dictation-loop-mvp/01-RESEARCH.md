@@ -631,11 +631,11 @@ The available voices are `pt-BR-AntonioNeural`, `pt-BR-FranciscaNeural`, `pt-BR-
 | A6 | Building one `WhisperProcessor` per (language, prompt) and reusing it is cheaper than per-request build (per-processor native state allocation) | Pattern 2 | Only latency; measure in the benchmark |
 | A7 | Blocklist prefix patterns listed in Pitfall 1 are sufficient for common pt-BR subtitle hallucinations | Pitfall 1 | Extra hallucinations leak only if VAD also passes them; extend the list from logs |
 
-## Open Questions (RESOLVED — adopted in plans: f16 vs q5_0 decided by D-17 benchmark; no_speech logged only, VAD is primary gate; real-mic path = optional manual smoke checklist; edge-tts pinned 7.3.1 reused from spike venv, SAPI fallback)
+## Open Questions (RESOLVED — adopted in plans: f16 vs q5_0 decided by D-17 benchmark; D-12 no_speech threshold retained with VAD primary; automated WASAPI smoke and optional subjective microphone check; edge-tts pinned 7.3.1 reused from spike venv, SAPI fallback)
 
-1. **f16 vs q5_0 default.** Both produced identical text on two TTS fixtures, and q5_0 + FA was slightly faster (≈0.5 s). D-17's "most accurate" rule needs the full fixture set (quiet/noisy/numbers). Recommendation: let the benchmark decide, and expect f16+FA if within budget, since both are far under 3.0 s.
-2. **Does `NoSpeechProbability` ever become non-zero?** It was always 0.000 here. Recommendation: keep the D-12 threshold code (configurable, e.g. 0.6), log the value, and do not rely on it. Revisit after real-mic data.
-3. **Real-mic first-word clipping.** Mic-open latency is logged (D-10), but there was no real-mic test in this session. Recommendation: put it in the optional manual smoke checklist.
+1. **f16 vs q5_0 default.** Both produced identical text on two TTS fixtures, and q5_0 + FA was slightly faster (≈0.5 s). D-17's "most accurate" rule needs the full fixture set (quiet/noisy/numbers). Adopted in plan 01-08: let the benchmark decide, and expect f16+FA if within budget, since both are far under 3.0 s.
+2. **Does `NoSpeechProbability` ever become non-zero?** It was always 0.000 here. Adopted in plan 01-05: keep the D-12 threshold code (configurable, e.g. 0.6), log the value, and do not rely on it. Revisit after real-mic data.
+3. **Real-mic first-word clipping.** Mic-open latency is logged (D-10), but there was no real-mic test in this session. Adopted in plans 01-06/01-13: bounded automated WASAPI smoke plus optional subjective first-word checklist.
 
 ## Environment Availability
 
@@ -654,7 +654,7 @@ The available voices are `pt-BR-AntonioNeural`, `pt-BR-FranciscaNeural`, `pt-BR-
 | Network to huggingface.co | model fetch | ✓ | — | local copies in the scratchpad (see Model Acquisition) |
 
 **Missing dependencies with no fallback:** none.
-**Missing dependencies with fallback:** edge-tts (install into a venv; SAPI fallback).
+**Missing dependencies with fallback:** edge-tts (reuse authorized spike binary or SAPI; no new package install scheduled).
 
 ## Validation Architecture
 

@@ -3,9 +3,9 @@
 **Phase:** 1
 **Generated:** 2026-10-22
 
-## Capability Proven End-to-End
+## Capability to Prove End-to-End
 
-`Somning.App.exe --transcribe-file <pt-BR wav>` copies the WAV into the recordings spool, starts the `Somning.Engine.exe` worker, the worker transcribes it locally with Whisper large-v3-turbo (Vulkan or CPU), and the punctuated pt-BR text ends up on the Windows clipboard. One log line records the result. This is plan 01-01, Task 1, and `SkeletonRoundTripTests` checks it.
+`Somning.App.exe --transcribe-file <pt-BR wav>` copies the WAV into the recordings spool, starts the `Somning.Engine.exe` worker, the worker transcribes it locally with Whisper large-v3-turbo (Vulkan or CPU), and the punctuated pt-BR text ends up on the Windows clipboard. One log line records the result. This is plan 01-02, Task 1; plan 01-01 first proves the worker tracer, and `SkeletonRoundTripTests` checks it.
 
 ## Architectural Decisions
 
@@ -14,7 +14,7 @@
 | Language / runtime | C# on .NET 10 (SDK 10.0.203), `net10.0` for pure libraries and `net10.0-windows` for Win32 and engine projects | Already installed and LTS. The pure Core can be tested without a desktop. Research found that a plain `net10.0` engine copies Linux/macOS natives |
 | UI framework | None in Phase 1. The App is a WinExe with a hidden message-only window | The Phase 1 goal allows "no UI beyond logs". WPF arrives in Phase 2 for the overlay and tray |
 | Process model | `Somning.App` (composition root) plus a child `Somning.Engine.exe` per backend, talking stdin/stdout JSON Lines in UTF-8 (D-03) | Native whisper.cpp crashes stay out of the App. Whisper.net cannot switch backends in-process because the loaded library is a static Lazy, so CPU fallback means restarting the worker (D-04) |
-| STT engine | Whisper.net 1.9.1 + Runtime + Runtime.Vulkan 1.9.1 (whisper.cpp 1.8.5), ggml large-v3-turbo, flash attention on, Silero v6.2.0 VAD gate | Verified on this Win10 19045 machine with an RX 7600. Flash attention is about 6.6x faster on Vulkan. Final defaults are recorded in BENCHMARK.md |
+| STT engine | Whisper.net 1.9.1 + Runtime + Runtime.Vulkan 1.9.1 (whisper.cpp 1.8.5), ggml large-v3-turbo, flash attention on, Silero v6.2.0 VAD gate | Verified on this Win10 19045 machine with an RX 7600. Flash attention is about 6.6x faster on Vulkan. Flash-attention evidence is from the later RESEARCH probe; original SPIKE left it off. Plan 01-08 will record measured final defaults in BENCHMARK.md |
 | Data layer | Files only: `%LOCALAPPDATA%\Somning\{models,recordings,logs}`. Each spool WAV has a JSON sidecar recording its completion stage (D-11) | No database is needed. Recordings must survive crashes (AUD-04). `SOMNING_DATA_DIR` and `SOMNING_MODELS_DIR` override the paths for tests |
 | Auth | None (single local user). The harness pipe is current-user-only and Debug-only (D-20) | Personal desktop tool. There is no network listener |
 | Win32 interop | Microsoft.Windows.CsWin32 0.3.367 via `NativeMethods.txt` | Generated signatures avoid struct-size bugs. Pitfall: use the raw-handle overloads for SetClipboardData and GetModuleHandle |
@@ -27,11 +27,11 @@
 
 ## Stack Touched in Phase 1
 
-- [x] Project scaffold: solution, central package versions, warnings as errors, xunit.v3 MTP runner (plan 01)
-- [x] "Routing" equivalent: App CLI modes (`--transcribe-file`, normal mode, `--test-harness`) and the JSONL message types (plans 01 and 07)
-- [x] Persistence: real writes of the spool WAV and sidecar, and real reads during startup recovery (plans 03 and 07)
-- [x] Interaction: the global hotkey drives recording, then clipboard and Ctrl+V into the focused app (plans 02, 04 and 07)
-- [x] Deployment: published directory build running without the SDK (`tools/gate.ps1`, plus `-App` in plan 08), and the one-command `tools/verify-phase1.ps1`
+- [ ] Project scaffold: solution, central package versions, warnings as errors, xunit.v3 MTP runner (plan 01)
+- [ ] "Routing" equivalent: App CLI modes (`--transcribe-file`, normal mode, `--test-harness`) and the JSONL message types (plans 01-01, 01-02, 01-10 and 01-11)
+- [ ] Persistence: real writes of the spool WAV and sidecar, and real reads during startup recovery (plans 01-06 and 01-11)
+- [ ] Interaction: the global hotkey drives recording, then clipboard and Ctrl+V into the focused app (plans 01-03, 01-04 and 01-10)
+- [ ] Deployment: published directory build running without the SDK (`tools/gate.ps1`, plus `-App` in plan 01-13), and the one-command `tools/verify-phase1.ps1`
 
 ## Out of Scope (Deferred to Later Slices)
 

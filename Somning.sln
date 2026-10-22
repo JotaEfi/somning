@@ -19,6 +19,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Somning.Core.Tests", "tests
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Somning.Integration.Tests", "tests\Somning.Integration.Tests\Somning.Integration.Tests.csproj", "{BBF5A01F-ADEC-4B59-8D2D-1A64FDC27B86}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Somning.App", "src\Somning.App\Somning.App.csproj", "{4C21575F-43A3-40B3-8419-450C2894EF32}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -101,6 +103,18 @@ Global
 		{BBF5A01F-ADEC-4B59-8D2D-1A64FDC27B86}.Release|x64.Build.0 = Release|Any CPU
 		{BBF5A01F-ADEC-4B59-8D2D-1A64FDC27B86}.Release|x86.ActiveCfg = Release|Any CPU
 		{BBF5A01F-ADEC-4B59-8D2D-1A64FDC27B86}.Release|x86.Build.0 = Release|Any CPU
+		{4C21575F-43A3-40B3-8419-450C2894EF32}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4C21575F-43A3-40B3-8419-450C2894EF32}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4C21575F-43A3-40B3-8419-450C2894EF32}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{4C21575F-43A3-40B3-8419-450C2894EF32}.Debug|x64.Build.0 = Debug|Any CPU
+		{4C21575F-43A3-40B3-8419-450C2894EF32}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{4C21575F-43A3-40B3-8419-450C2894EF32}.Debug|x86.Build.0 = Debug|Any CPU
+		{4C21575F-43A3-40B3-8419-450C2894EF32}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4C21575F-43A3-40B3-8419-450C2894EF32}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4C21575F-43A3-40B3-8419-450C2894EF32}.Release|x64.ActiveCfg = Release|Any CPU
+		{4C21575F-43A3-40B3-8419-450C2894EF32}.Release|x64.Build.0 = Release|Any CPU
+		{4C21575F-43A3-40B3-8419-450C2894EF32}.Release|x86.ActiveCfg = Release|Any CPU
+		{4C21575F-43A3-40B3-8419-450C2894EF32}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -112,5 +126,6 @@ Global
 		{C9E7D9ED-BF74-4EFB-AE2E-C91F13D7DF5C} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{CFE16843-38C6-4AE0-ABC1-02D851F65D26} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{BBF5A01F-ADEC-4B59-8D2D-1A64FDC27B86} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{4C21575F-43A3-40B3-8419-450C2894EF32} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

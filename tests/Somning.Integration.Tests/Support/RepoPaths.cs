@@ -13,4 +13,6 @@ public static class RepoPaths
     public static string Fixtures => Path.Combine(Root, "tests", "fixtures");
     public static string EngineExe => Path.Combine(Root, "src", "Somning.Engine", "bin", "Debug",
         "net10.0-windows", "Somning.Engine.exe");
+    public static string AppExe => Path.Combine(Root, "src", "Somning.App", "bin", "Debug",
+        "net10.0-windows", "Somning.App.exe");
 }

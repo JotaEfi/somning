@@ -62,7 +62,7 @@ Press the hotkey, speak Portuguese, and accurate text lands in the focused field
 | pt-BR fixed in v1 | Owner request; fixed language improves Whisper accuracy | — Pending |
 | Transcribe on stop (no live partial text) | Overlay only shows waveform; full-utterance decoding gives best quality | — Pending |
 | Paste via clipboard + simulated Ctrl+V, keep text in clipboard | Owner wants both auto-paste and later manual paste | — Pending |
-| Tech stack (language/UI/STT runtime) | To be decided by research | — Pending |
+| C#/.NET 10 WPF shell + Whisper.net (whisper.cpp, Vulkan/CPU) in a separate restartable `Somning.Engine` worker process | Research + Codex cross-review: reliable LL hooks/overlay on Windows; only practical AMD GPU path; worker isolates native crashes and enables GPU→CPU restart | — Pending (gated on Win10 published-build inference test in Phase 1) |
 
 ## Evolution
 

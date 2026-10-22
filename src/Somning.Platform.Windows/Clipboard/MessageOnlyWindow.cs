@@ -5,7 +5,8 @@ namespace Somning.Platform.Windows.Clipboard;
 public sealed class MessageOnlyWindow : IDisposable
 {
     private const uint Dispatch = 0x802A;
-    private readonly ConcurrentQueue<Action> actions = new();
+    private readonly ConcurrentQueue<(Action Run, Action<Exception> Fail)> actions = new();
+    private readonly object lifecycle = new();
     private readonly TaskCompletionSource<nint> ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Thread thread;
     private readonly WindowProcedure procedure;
@@ -21,12 +22,28 @@ public sealed class MessageOnlyWindow : IDisposable
     }
     public T Invoke<T>(Func<T> action)
     {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
-        if (Thread.CurrentThread == thread) return action();
         var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
-        actions.Enqueue(() => { try { completion.SetResult(action()); } catch (Exception ex) { completion.SetException(ex); } });
-        if (!Native.PostMessage(Handle, Dispatch, 0, 0)) throw new Win32Exception();
-        return completion.Task.GetAwaiter().GetResult();
+        int state = 0; // pending, executing, complete, cancelled
+        void Run()
+        {
+            if (Interlocked.CompareExchange(ref state, 1, 0) != 0) return;
+            try { completion.TrySetResult(action()); } catch (Exception ex) { completion.TrySetException(ex); }
+            finally { Interlocked.Exchange(ref state, 2); }
+        }
+        void Fail(Exception error)
+        {
+            if (Interlocked.CompareExchange(ref state, 3, 0) == 0) completion.TrySetException(error);
+        }
+        lock (lifecycle)
+        {
+            ObjectDisposedException.ThrowIf(disposed != 0, this);
+            if (Thread.CurrentThread == thread) return action();
+            actions.Enqueue((Run, Fail));
+            if (!Native.PostMessage(Handle, Dispatch, 0, 0))
+            { var error = new Win32Exception(); Fail(error); throw error; }
+        }
+        try { return completion.Task.WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult(); }
+        catch (TimeoutException ex) { Fail(ex); throw; }
     }
     private void Run()
     {
@@ -48,19 +65,31 @@ public sealed class MessageOnlyWindow : IDisposable
             if (status == -1) throw new Win32Exception();
         }
         catch (Exception ex) { ready.TrySetException(ex); }
-        finally { if (registered) Native.UnregisterClass(className, instance); }
+        finally
+        {
+            lock (lifecycle)
+            {
+                disposed = 1;
+                while (actions.TryDequeue(out var action)) action.Fail(new ObjectDisposedException(nameof(MessageOnlyWindow)));
+            }
+            if (registered) Native.UnregisterClass(className, instance);
+        }
     }
     private nint WindowProc(nint hwnd, uint message, nuint wparam, nint lparam)
     {
-        if (message == Dispatch) { while (actions.TryDequeue(out var action)) action(); return 0; }
+        if (message == Dispatch) { while (actions.TryDequeue(out var action)) action.Run(); return 0; }
         if (message == 0x10) { Native.DestroyWindow(hwnd); return 0; }
         if (message == 2) { Native.PostQuitMessage(0); return 0; }
         return Native.DefWindowProc(hwnd, message, wparam, lparam);
     }
     public void Dispose()
     {
-        if (Interlocked.Exchange(ref disposed, 1) != 0) return;
-        Native.PostMessage(Handle, 0x10, 0, 0);
+        lock (lifecycle)
+        {
+            if (disposed != 0) return;
+            disposed = 1;
+            Native.PostMessage(Handle, 0x10, 0, 0);
+        }
         if (Thread.CurrentThread != thread) thread.Join(TimeSpan.FromSeconds(5));
         GC.KeepAlive(procedure);
     }

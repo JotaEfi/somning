@@ -16,10 +16,13 @@ public sealed class EngineSupervisor(string? enginePath = null) : ITranscriber
     private Task stdout = Task.CompletedTask, stderr = Task.CompletedTask;
     private EngineSessionInfo? session;
     private bool disposing;
+    private bool outputEnded;
+    private readonly object lifecycle = new();
     public EngineStatus Status { get; private set; } = EngineStatus.Starting;
     public event Action<EngineStatus>? StatusChanged;
     public string? ActiveBackend => session?.Backend;
-    private void SetStatus(EngineStatus status) { Status = status; StatusChanged?.Invoke(status); }
+    private void SetStatus(EngineStatus status)
+    { lock (lifecycle) { Status = status; StatusChanged?.Invoke(status); } }
     public async Task StartAsync(string backend, CancellationToken ct)
     {
         if (process is not null) throw new InvalidOperationException("Engine already started.");
@@ -41,8 +44,12 @@ public sealed class EngineSupervisor(string? enginePath = null) : ITranscriber
         {
             process = Process.Start(info) ?? throw new IOException("Worker did not start.");
             stdout = ReadOutputAsync(process); stderr = ReadErrorsAsync(process);
-            session = await ready.Task.WaitAsync(TimeSpan.FromSeconds(60), ct);
-            SetStatus(EngineStatus.Ready);
+            var startedSession = await ready.Task.WaitAsync(TimeSpan.FromSeconds(60), ct);
+            lock (lifecycle)
+            {
+                if (outputEnded || process.HasExited) throw new IOException("Worker exited during startup.");
+                session = startedSession; SetStatus(EngineStatus.Ready);
+            }
         }
         catch { SetStatus(EngineStatus.Failed); throw; }
     }
@@ -93,13 +100,18 @@ public sealed class EngineSupervisor(string? enginePath = null) : ITranscriber
                 { Log.Warning("Invalid worker protocol line"); continue; }
                 switch (message)
                 {
-                    case ReadyMessage r:
+                    case ReadyMessage r when r.Backend is "cpu" or "vulkan" && !string.IsNullOrWhiteSpace(r.Model)
+                        && double.IsFinite(r.LoadMs) && r.LoadMs >= 0 && double.IsFinite(r.WarmMs) && r.WarmMs >= 0:
                         ready.TrySetResult(new(r.Backend, r.Model, (long)r.LoadMs, (long)r.WarmMs, r.GpuInUse, r.FlashAttention)); break;
-                    case ResultMessage r when pending.TryGetValue(r.Id, out var completion): completion.TrySetResult(r); break;
-                    case ErrorMessage e when e.Id is not null && pending.TryGetValue(e.Id, out var completion):
-                        completion.TrySetResult(e); break;
-                    case ErrorMessage e when e.Id is null:
+                    case ResultMessage r when !string.IsNullOrWhiteSpace(r.Id) && r.Text is not null
+                        && r.Outcome is "text" or "empty":
+                        if (pending.TryGetValue(r.Id, out var completion)) completion.TrySetResult(r);
+                        break;
+                    case ErrorMessage e when e.Id is not null && pending.TryGetValue(e.Id, out var errorCompletion):
+                        errorCompletion.TrySetResult(e); break;
+                    case ErrorMessage e when e.Id is null && !string.IsNullOrWhiteSpace(e.Code):
                         ready.TrySetException(new IOException("Engine initialization error: " + e.Code)); break;
+                    default: Log.Warning("Unexpected or malformed worker response"); break;
                 }
             }
         }
@@ -110,7 +122,11 @@ public sealed class EngineSupervisor(string? enginePath = null) : ITranscriber
             var error = new IOException("Engine exited before completing request.");
             ready.TrySetException(error);
             foreach (var request in pending.Values) request.TrySetException(error);
-            if (!disposing) SetStatus(EngineStatus.Failed);
+            lock (lifecycle)
+            {
+                outputEnded = true;
+                if (!disposing) SetStatus(EngineStatus.Failed);
+            }
         }
     }
     private static async Task ReadErrorsAsync(Process child)

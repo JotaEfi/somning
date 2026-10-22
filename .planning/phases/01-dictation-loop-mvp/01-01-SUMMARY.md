@@ -77,10 +77,10 @@ coverage:
 4. Follow-up correctness fixes: `29a3df5` — DOS canonicalization, property-order parsing and native segment output.
 5. Task 3: `8cba95b` — verified model fetch, published CPU/Vulkan gate and committed evidence.
 
-## Verification
+## Executed checks
 
 - `dotnet build Somning.sln -c Debug`: zero warnings, zero errors.
-- `dotnet test --project tests/Somning.Core.Tests`: 18 passed, zero failures/skips.
+- `dotnet test` for project `tests/Somning.Core.Tests`: 18 passed, zero failures/skips.
 - `SOMNING_STRICT=1 dotnet test --project tests/Somning.Integration.Tests --filter-class "*.EngineWorkerTests"`: original five methods passed, zero failures/skips (86.50 s).
 - Added explicit DOS-alias regression: `--filter-method "*.Dos_short_paths_are_canonicalized"` passed both mixed spellings in one test (52.96 s), zero skips.
 - Final focused tracer recheck confirms returned segments on the final protocol.
@@ -123,5 +123,5 @@ STATE.md, ROADMAP.md and requirements updates are owned by the parent orchestrat
 
 ## Self-Check: PASSED
 
-All six key delivered files exist; all five task commits are ancestors of HEAD. Final focused tracer passed 1/1, zero failures/skips (28.80 s).
+All six key delivered files exist; all five task commits are ancestors of HEAD. Final focused tracer passed 1/1, no skips (28.80 s).
 

@@ -2,9 +2,13 @@ using Somning.Core.Text;
 using Somning.Engine.Protocol;
 using Somning.Integration.Tests.Support;
 using Xunit;
+using System.Runtime.InteropServices;
+using System.Text;
 namespace Somning.Integration.Tests.Engine;
 public sealed class EngineWorkerTests : IDisposable
 {
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern uint GetShortPathName(string longPath, StringBuilder shortPath, uint length);
     private readonly string allowed = Path.Combine(Path.GetTempPath(), "somning-tests", Guid.NewGuid().ToString("N"));
     private string Fixture()
     {
@@ -23,10 +27,32 @@ public sealed class EngineWorkerTests : IDisposable
         await client.SendAsync(new TranscribeRequest("tracer", wav));
         var result = Assert.IsType<ResultMessage>(await client.ReadMessageAsync(TimeSpan.FromSeconds(180)));
         Assert.Equal("text", result.Outcome);
+        Assert.NotNull(result.Segments); Assert.NotEmpty(result.Segments);
+        Assert.All(result.Segments, segment => Assert.True(segment.End >= segment.Start));
         var expected = File.ReadAllText(Path.Combine(RepoPaths.Fixtures, "tracer", "hoje.txt"));
         Assert.True(Wer.Compute(expected, result.Text) <= .1, result.Text);
         await client.SendAsync(new ShutdownRequest());
         Assert.Equal(0, await client.WaitForExitAsync(TimeSpan.FromSeconds(10)));
+    }
+    [Fact]
+    public async Task Dos_short_paths_are_canonicalized()
+    {
+        Fixture();
+        var buffer = new StringBuilder(32768);
+        Assert.True(GetShortPathName(allowed, buffer, (uint)buffer.Capacity) > 0);
+        var alias = buffer.ToString();
+        Requires.That(!string.Equals(alias, allowed, StringComparison.OrdinalIgnoreCase), "DOS 8.3 alias required.");
+        foreach (var (root, wav) in new[] { (alias, Path.Combine(allowed, "hoje.wav")), (allowed, Path.Combine(alias, "hoje.wav")) })
+        {
+            using var client = new EngineWorkerClient(root);
+            await client.ReadyAsync();
+            await client.SendAsync(new TranscribeRequest("short-path", wav));
+            var result = Assert.IsType<ResultMessage>(await client.ReadMessageAsync(TimeSpan.FromSeconds(180)));
+            Assert.Equal("text", result.Outcome);
+            Assert.True(Wer.Compute(File.ReadAllText(Path.Combine(RepoPaths.Fixtures, "tracer", "hoje.txt")), result.Text) <= .1);
+            await client.SendAsync(new ShutdownRequest());
+            Assert.Equal(0, await client.WaitForExitAsync(TimeSpan.FromSeconds(5)));
+        }
     }
     [Fact]
     public async Task Cancel_active_request()

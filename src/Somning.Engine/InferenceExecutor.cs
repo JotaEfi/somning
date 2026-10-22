@@ -83,10 +83,10 @@ public sealed class InferenceExecutor(WhisperHost host, EngineOptions options, G
             if (audio is null) { write(new ErrorMessage(request.Id, ErrorCodes.InvalidPath, "Invalid audio path.")); return; }
             var duration = WavDurationMs(audio);
             var watch = Stopwatch.StartNew();
-            var (text, noSpeech) = await host.TranscribeAsync(audio, token);
+            var (text, noSpeech, segments) = await host.TranscribeAsync(audio, token);
             write(new ResultMessage(request.Id, text, text.Length == 0 ? "empty" : "text",
                 text.Length == 0 ? "blank" : null, duration, 0,
-                watch.Elapsed.TotalMilliseconds, noSpeech, options.Backend, Path.GetFileName(options.Model)));
+                watch.Elapsed.TotalMilliseconds, noSpeech, options.Backend, Path.GetFileName(options.Model), segments));
         }
         catch (OperationCanceledException) { write(new ErrorMessage(request.Id, ErrorCodes.Cancelled, "Request cancelled.")); }
         catch (Exception) { write(new ErrorMessage(request.Id, observer.HasError ? ErrorCodes.GpuError

@@ -15,5 +15,7 @@ public sealed record TranscribeRequest(string Id, string WavPath, string Languag
 public sealed record CancelRequest(string Id) : EngineMessage;
 public sealed record ShutdownRequest : EngineMessage;
 public sealed record ResultMessage(string Id, string Text, string Outcome, string? Reason,
-    double DurationMs, double VadMs, double InferMs, float NoSpeech, string Backend, string Model) : EngineMessage;
+    double DurationMs, double VadMs, double InferMs, float NoSpeech, string Backend, string Model,
+    IReadOnlyList<SegmentMessage>? Segments = null) : EngineMessage;
+public sealed record SegmentMessage(string Text, double Start, double End, float NoSpeech);
 public sealed record ErrorMessage(string? Id, string Code, string Message) : EngineMessage;

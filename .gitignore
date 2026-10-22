@@ -1,1 +1,9 @@
 .maestri/
+bin/
+obj/
+publish/
+TestResults/
+*.bin
+models/
+.venv/
+*.user

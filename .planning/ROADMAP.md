@@ -14,6 +14,7 @@ Somning goes from a headless, agent-verifiable dictation loop (hotkey, mic, loca
 ## Phase Details
 
 ### Phase 1: Dictation Loop MVP
+
 **Goal**: A scripted hotkey press, speech and release deliver accurate pt-BR text to the clipboard and the focused field, using the local engine, with no UI beyond logs
 **Mode:** mvp
 **Depends on**: Nothing (first phase)
@@ -24,10 +25,11 @@ Somning goes from a headless, agent-verifiable dictation loop (hotkey, mic, loca
   3. Silence-only, noise-only, and very short (< ~0.4 s) fixtures paste nothing and never produce hallucinations such as "Obrigado." or "Amara.org"
   4. Killing the engine worker or forcing GPU failure mid-run restarts it in CPU mode without crashing the app; a recording interrupted by a crash is recovered from its spool WAV on restart
   5. Pasting while the target window changed or is elevated leaves the text on the clipboard and logs a manual-paste outcome; every dictation logs capture, load, inference and paste timings with API keys redacted
-**Plans:** 13 plans
+
+**Plans:** 1/13 plans executed
 
 Plans (all execution and verification sequential):
-- [ ] 01-01-PLAN.md - Worker/protocol tracer, published gate and model fetch (wave 1)
+- [x] 01-01-PLAN.md - Worker/protocol tracer, published gate and model fetch (wave 1)
 - [ ] 01-02-PLAN.md - App-worker-clipboard skeleton and Core contracts (wave 2)
 - [ ] 01-03-PLAN.md - Global hook, tap/hold and long-hold watchdog (wave 3)
 - [ ] 01-04-PLAN.md - Target/focus validation and safe paste (wave 3)
@@ -42,6 +44,7 @@ Plans (all execution and verification sequential):
 - [ ] 01-13-PLAN.md - Focus/metrics, published App and final verifier (wave 10)
 
 ### Phase 2: Overlay, Tray, Settings & Cancel
+
 **Goal**: User can live with Somning day to day: a visible non-intrusive pill, tray control, persisted settings, cancel, and a first-run model download
 **Mode:** mvp
 **Depends on**: Phase 1
@@ -52,10 +55,12 @@ Plans (all execution and verification sequential):
   3. Pressing Esc while recording cancels it and nothing is transcribed or pasted; the tray menu offers Configurações, Colar último, Abrir logs and Sair, and re-pasting the last transcript works
   4. Settings (hotkey with conflict warning, mic applied without restart, auto-paste off giving clipboard-only, sounds, vocabulary prompt, tap threshold) round-trip across restarts, survive corrupted files, and the API key is stored DPAPI-encrypted; a second instance exits immediately
   5. First run with no model downloads it with progress, resume and SHA-256 verification against a local test server, reporting retryable failures
+
 **Plans**: TBD
 **UI hint**: yes
 
 ### Phase 3: Cloud Engine
+
 **Goal**: User can opt into cloud transcription by entering a Groq or OpenAI key, with clear failures and no lost recordings
 **Mode:** mvp
 **Depends on**: Phase 2
@@ -69,6 +74,7 @@ Plans (all execution and verification sequential):
 **UI hint**: yes
 
 ### Phase 4: Packaging, Autostart & Hardening
+
 **Goal**: User installs Somning on a clean Windows 10 machine and it keeps working across restarts, sleep and long uptime
 **Mode:** mvp
 **Depends on**: Phase 3
@@ -77,13 +83,14 @@ Plans (all execution and verification sequential):
   1. A per-user installer runs unattended on a clean Windows 10 profile (including non-ASCII and space paths) and the installed binary passes the Phase 1 E2E into Notepad
   2. Enabling start-with-Windows registers the HKCU Run entry and the app starts minimized to tray on logon
   3. After simulated sleep/resume and lock/unlock, and a scripted soak of many dictations, the hotkey hook still works (watchdog reinstall) and a paste-matrix report (Notepad, Chrome/Edge, VS Code, Windows Terminal, Word, elevated Notepad notice) is produced
+
 **Plans**: TBD
 
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Dictation Loop MVP | 0/TBD | Not started | - |
+| 1. Dictation Loop MVP | 1/13 | In Progress | - |
 | 2. Overlay, Tray, Settings & Cancel | 0/TBD | Not started | - |
 | 3. Cloud Engine | 0/TBD | Not started | - |
 | 4. Packaging, Autostart & Hardening | 0/TBD | Not started | - |

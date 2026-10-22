@@ -97,11 +97,46 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
+| HOTK-01 | Phase 1 | Pending |
+| HOTK-02 | Phase 1 | Pending |
+| HOTK-03 | Phase 1 | Pending |
+| HOTK-04 | Phase 2 | Pending |
+| HOTK-05 | Phase 2 | Pending |
+| AUD-01 | Phase 1 | Pending |
+| AUD-02 | Phase 2 | Pending |
+| AUD-03 | Phase 2 | Pending |
+| AUD-04 | Phase 1 | Pending |
+| STT-01 | Phase 1 | Pending |
+| STT-02 | Phase 1 | Pending |
+| STT-03 | Phase 1 | Pending |
+| STT-04 | Phase 1 | Pending |
+| STT-05 | Phase 3 | Pending |
+| STT-06 | Phase 3 | Pending |
+| STT-07 | Phase 2 | Pending |
+| STT-08 | Phase 1 | Pending |
+| OUT-01 | Phase 1 | Pending |
+| OUT-02 | Phase 1 | Pending |
+| OUT-03 | Phase 1 | Pending |
+| OUT-04 | Phase 2 | Pending |
+| OUT-05 | Phase 2 | Pending |
+| OVL-01 | Phase 2 | Pending |
+| OVL-02 | Phase 2 | Pending |
+| OVL-03 | Phase 2 | Pending |
+| OVL-04 | Phase 2 | Pending |
+| APP-01 | Phase 2 | Pending |
+| APP-02 | Phase 2 | Pending |
+| APP-03 | Phase 2 | Pending |
+| APP-04 | Phase 2 | Pending |
+| APP-05 | Phase 2 | Pending |
+| APP-06 | Phase 1 | Pending |
+| DIST-01 | Phase 4 | Pending |
+| DIST-02 | Phase 4 | Pending |
+| DIST-03 | Phase 4 | Pending |
 
 **Coverage:**
 - v1 requirements: 35 total
-- Mapped to phases: 0
-- Unmapped: 35 ⚠️
+- Mapped to phases: 35
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-10-22*

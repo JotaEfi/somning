@@ -35,6 +35,7 @@ public sealed class EngineWorkerTests : IDisposable
         using var client = new EngineWorkerClient(allowed, fault: "slow_transcribe");
         await client.ReadyAsync();
         await client.SendAsync(new TranscribeRequest("A", wav));
+        await client.StartedAsync();
         await client.SendAsync(new CancelRequest("A"));
         var error = Assert.IsType<ErrorMessage>(await client.ReadMessageAsync(TimeSpan.FromSeconds(5)));
         Assert.Equal("A", error.Id); Assert.Equal(ErrorCodes.Cancelled, error.Code);
@@ -48,10 +49,19 @@ public sealed class EngineWorkerTests : IDisposable
         using var client = new EngineWorkerClient(allowed, fault: "slow_transcribe");
         await client.ReadyAsync();
         await client.SendAsync(new TranscribeRequest("A", wav));
+        await client.StartedAsync();
         await client.SendAsync(new TranscribeRequest("B", wav));
         await client.SendAsync(new CancelRequest("B"));
         var error = Assert.IsType<ErrorMessage>(await client.ReadMessageAsync(TimeSpan.FromSeconds(5)));
         Assert.Equal("B", error.Id); Assert.Equal(ErrorCodes.Cancelled, error.Code);
+        for (int i = 0; i < 40; i++)
+        {
+            var id = "queued-" + i;
+            await client.SendAsync(new TranscribeRequest(id, wav));
+            await client.SendAsync(new CancelRequest(id));
+            var cancelled = Assert.IsType<ErrorMessage>(await client.ReadMessageAsync(TimeSpan.FromSeconds(5)));
+            Assert.Equal(id, cancelled.Id); Assert.Equal(ErrorCodes.Cancelled, cancelled.Code);
+        }
         await client.SendAsync(new ShutdownRequest());
         Assert.Equal(0, await client.WaitForExitAsync(TimeSpan.FromSeconds(5)));
     }
@@ -62,13 +72,16 @@ public sealed class EngineWorkerTests : IDisposable
         using var client = new EngineWorkerClient(allowed, fault: "slow_transcribe");
         await client.ReadyAsync();
         await client.SendAsync(new TranscribeRequest("A", wav));
+        await client.StartedAsync();
         await client.SendAsync(new ShutdownRequest());
         Assert.Equal(0, await client.WaitForExitAsync(TimeSpan.FromSeconds(5)));
     }
     [Fact]
     public async Task Sibling_prefix_path_is_rejected()
     {
-        Fixture();
+        var wav = Fixture();
+        Directory.CreateDirectory(allowed + "-other");
+        File.Copy(wav, Path.Combine(allowed + "-other", "hoje.wav"));
         using var client = new EngineWorkerClient(allowed);
         await client.ReadyAsync();
         await client.SendAsync(new TranscribeRequest("invalid", allowed + "-other/hoje.wav"));
@@ -77,5 +90,9 @@ public sealed class EngineWorkerTests : IDisposable
         await client.SendAsync(new ShutdownRequest());
         Assert.Equal(0, await client.WaitForExitAsync(TimeSpan.FromSeconds(5)));
     }
-    public void Dispose() { if (Directory.Exists(allowed)) Directory.Delete(allowed, true); }
+    public void Dispose()
+    {
+        if (Directory.Exists(allowed)) Directory.Delete(allowed, true);
+        if (Directory.Exists(allowed + "-other")) Directory.Delete(allowed + "-other", true);
+    }
 }

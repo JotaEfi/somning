@@ -14,8 +14,12 @@ public sealed class WhisperHost : IDisposable
         var watch = Stopwatch.StartNew();
         factory = WhisperFactory.FromPath(options.Model, new WhisperFactoryOptions
         { UseGpu = options.Backend == "vulkan", UseFlashAttention = options.FlashAttention });
-        processor = factory.CreateBuilder().WithLanguage(EngineDefaults.Language).WithNoContext()
-            .WithThreads(options.Threads).WithPrompt(EngineDefaults.InitialPrompt).Build();
+        try
+        {
+            processor = factory.CreateBuilder().WithLanguage(EngineDefaults.Language).WithNoContext()
+                .WithThreads(options.Threads).WithPrompt(EngineDefaults.InitialPrompt).Build();
+        }
+        catch { factory.Dispose(); throw; }
         LoadMs = watch.Elapsed.TotalMilliseconds;
     }
     public async Task WarmAsync()
@@ -24,10 +28,9 @@ public sealed class WhisperHost : IDisposable
         await foreach (var _ in processor.ProcessAsync(new float[16000])) { }
         WarmMs = watch.Elapsed.TotalMilliseconds;
     }
-    public async Task<(string Text, float NoSpeech)> TranscribeAsync(string path, CancellationToken token)
+    public async Task<(string Text, float NoSpeech)> TranscribeAsync(Stream audio, CancellationToken token)
     {
         var text = new StringBuilder(); float noSpeech = 0;
-        await using var audio = File.OpenRead(path);
         await foreach (var segment in processor.ProcessAsync(audio, token))
         { text.Append(segment.Text); noSpeech = Math.Max(noSpeech, segment.NoSpeechProbability); }
         return (text.ToString().Trim(), noSpeech);

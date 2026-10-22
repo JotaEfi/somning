@@ -22,7 +22,8 @@ public sealed class ProtocolRoundTripTests
     [Theory]
     [InlineData("{\"type\":\"unknown\"}")]
     [InlineData("not json")]
-    public void Rejects_malformed_message(string line)
+    [InlineData(null)]
+    public void Rejects_malformed_message(string? line)
     { Assert.False(JsonLines.TryDeserialize(line, out _, out var error)); Assert.Equal(ErrorCodes.BadRequest, error); }
     [Fact] public void Rejects_oversized_line() => Assert.False(JsonLines.TryDeserialize(new string('x', 70000), out _, out _));
 }

@@ -8,6 +8,7 @@ public sealed class EngineWorkerClient : IDisposable
 {
     private readonly Process process;
     private readonly Task<string> stderr;
+    private readonly TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public EngineWorkerClient(string allowedDir, string backend = "cpu", string? fault = null)
     {
         var info = new ProcessStartInfo(RepoPaths.EngineExe)
@@ -21,8 +22,19 @@ public sealed class EngineWorkerClient : IDisposable
             "--threads", EngineDefaults.Threads.ToString(), "--allowed-dir", allowedDir }) info.ArgumentList.Add(arg);
         if (fault is not null) info.Environment["SOMNING_ENGINE_FAULT"] = fault;
         process = Process.Start(info) ?? throw new InvalidOperationException("Engine did not start.");
-        stderr = process.StandardError.ReadToEndAsync();
+        stderr = DrainErrorsAsync();
     }
+    private async Task<string> DrainErrorsAsync()
+    {
+        var errors = new StringBuilder();
+        while (await process.StandardError.ReadLineAsync() is { } line)
+        {
+            if (line.Contains("somning-test:inference-started", StringComparison.Ordinal)) started.TrySetResult();
+            errors.AppendLine(line);
+        }
+        return errors.ToString();
+    }
+    public Task StartedAsync() => started.Task.WaitAsync(TimeSpan.FromSeconds(5));
     public async Task<ReadyMessage> ReadyAsync() => await ReadMessageAsync(TimeSpan.FromSeconds(120))
         as ReadyMessage ?? throw new InvalidDataException("Expected ready.");
     public async Task SendAsync(EngineMessage message)

@@ -5,10 +5,10 @@ public static class JsonLines
     public const int MaxLineLength = 65536;
     public static string Serialize(EngineMessage message) =>
         JsonSerializer.Serialize(message, ProtocolJsonContext.Default.EngineMessage);
-    public static bool TryDeserialize(string line, out EngineMessage? message, out string? error)
+    public static bool TryDeserialize(string? line, out EngineMessage? message, out string? error)
     {
         message = null; error = ErrorCodes.BadRequest;
-        if (line.Length > MaxLineLength) return false;
+        if (line is null || line.Length > MaxLineLength) return false;
         try
         {
             message = JsonSerializer.Deserialize(line, ProtocolJsonContext.Default.EngineMessage);

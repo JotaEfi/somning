@@ -10,6 +10,7 @@ public sealed class InferenceExecutor(WhisperHost host, EngineOptions options, G
     private readonly Dictionary<string, Pending> pending = new(StringComparer.Ordinal);
     private readonly object sync = new();
     private bool stopping;
+    private Pending? active;
     public void Enqueue(TranscribeRequest request)
     {
         lock (sync)
@@ -24,7 +25,26 @@ public sealed class InferenceExecutor(WhisperHost host, EngineOptions options, G
     }
     public void Cancel(string id)
     {
-        lock (sync) { if (pending.TryGetValue(id, out var item)) item.Cancellation.Cancel(); }
+        lock (sync)
+        {
+            if (!pending.TryGetValue(id, out var item)) return;
+            item.Cancellation.Cancel();
+            if (item == active) return;
+            pending.Remove(id);
+            write(new ErrorMessage(id, ErrorCodes.Cancelled, "Request cancelled."));
+            ReclaimQueueSlots();
+        }
+    }
+    private void ReclaimQueueSlots()
+    {
+        var live = new List<Pending>();
+        while (queue.Reader.TryRead(out var item))
+        {
+            if (pending.TryGetValue(item.Request.Id, out var registered) && registered == item) live.Add(item);
+            else item.Cancellation.Dispose();
+        }
+        foreach (var item in live)
+            if (!queue.Writer.TryWrite(item)) throw new InvalidOperationException("Queue invariant violated.");
     }
     public void Stop()
     {
@@ -39,8 +59,14 @@ public sealed class InferenceExecutor(WhisperHost host, EngineOptions options, G
     {
         await foreach (var item in queue.Reader.ReadAllAsync())
         {
+            lock (sync)
+            {
+                if (!pending.TryGetValue(item.Request.Id, out var registered) || registered != item)
+                { item.Cancellation.Dispose(); continue; }
+                active = item;
+            }
             await ExecuteAsync(item);
-            lock (sync) { pending.Remove(item.Request.Id); item.Cancellation.Dispose(); }
+            lock (sync) { active = null; pending.Remove(item.Request.Id); item.Cancellation.Dispose(); }
         }
     }
     private async Task ExecuteAsync(Pending item)
@@ -53,19 +79,22 @@ public sealed class InferenceExecutor(WhisperHost host, EngineOptions options, G
             var fault = await FaultInjection.BeforeTranscribeAsync(options.Backend, token);
             if (fault is not null) { write(new ErrorMessage(request.Id, fault, "Injected GPU error.")); return; }
 #endif
+            using var audio = PathGuard.OpenValidated(options.AllowedDir, request.WavPath);
+            if (audio is null) { write(new ErrorMessage(request.Id, ErrorCodes.InvalidPath, "Invalid audio path.")); return; }
+            var duration = WavDurationMs(audio);
             var watch = Stopwatch.StartNew();
-            var (text, noSpeech) = await host.TranscribeAsync(request.WavPath, token);
+            var (text, noSpeech) = await host.TranscribeAsync(audio, token);
             write(new ResultMessage(request.Id, text, text.Length == 0 ? "empty" : "text",
-                text.Length == 0 ? "blank" : null, WavDurationMs(request.WavPath), 0,
+                text.Length == 0 ? "blank" : null, duration, 0,
                 watch.Elapsed.TotalMilliseconds, noSpeech, options.Backend, Path.GetFileName(options.Model)));
         }
         catch (OperationCanceledException) { write(new ErrorMessage(request.Id, ErrorCodes.Cancelled, "Request cancelled.")); }
         catch (Exception) { write(new ErrorMessage(request.Id, observer.HasError ? ErrorCodes.GpuError
             : ErrorCodes.TranscribeFailed, "Transcription failed.")); }
     }
-    private static double WavDurationMs(string path)
+    private static double WavDurationMs(Stream audio)
     {
-        using var reader = new BinaryReader(File.OpenRead(path));
+        using var reader = new BinaryReader(audio, System.Text.Encoding.UTF8, leaveOpen: true);
         if (new string(reader.ReadChars(4)) != "RIFF") throw new InvalidDataException("Not RIFF.");
         reader.ReadUInt32();
         if (new string(reader.ReadChars(4)) != "WAVE") throw new InvalidDataException("Not WAVE.");
@@ -77,7 +106,11 @@ public sealed class InferenceExecutor(WhisperHost host, EngineOptions options, G
             if (end > reader.BaseStream.Length + 1) throw new InvalidDataException("Truncated WAV.");
             if (id == "fmt " && size >= 16)
             { reader.ReadUInt16(); reader.ReadUInt16(); reader.ReadUInt32(); rate = reader.ReadUInt32(); }
-            if (id == "data") return rate > 0 ? size * 1000.0 / rate : throw new InvalidDataException("Missing format.");
+            if (id == "data")
+            {
+                audio.Position = 0;
+                return rate > 0 ? size * 1000.0 / rate : throw new InvalidDataException("Missing format.");
+            }
             reader.BaseStream.Position = end;
         }
         throw new InvalidDataException("Missing audio.");

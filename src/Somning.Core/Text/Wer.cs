@@ -3,7 +3,7 @@ namespace Somning.Core.Text;
 public static partial class Wer
 {
     [GeneratedRegex(@"[^\p{L}\p{N}\s]")] private static partial Regex Punctuation();
-    public static string[] Tokens(string text) => Punctuation().Replace(text.ToLowerInvariant(), "")
+    public static string[] Tokens(string text) => Punctuation().Replace(text.ToLowerInvariant(), " ")
         .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
     public static double Compute(string expected, string actual)
     {

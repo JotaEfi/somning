@@ -24,9 +24,14 @@ using var logger = LogProvider.AddLogger((level, message) =>
     // Native diagnostic lines are operational only; decoding results are never enabled.
     if (message is not null) Console.Error.Write(message);
 });
-WhisperHost host;
+WhisperHost? host = null;
 try { host = new WhisperHost(options); await host.WarmAsync(); }
-catch (Exception) { Write(new ErrorMessage(null, ErrorCodes.BackendInitFailed, "Backend initialization failed.")); return 4; }
+catch (Exception)
+{
+    host?.Dispose();
+    Write(new ErrorMessage(null, ErrorCodes.BackendInitFailed, "Backend initialization failed."));
+    return 4;
+}
 using (host)
 using (var executor = new InferenceExecutor(host, options, observer, Write))
 {

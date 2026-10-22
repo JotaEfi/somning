@@ -1,1 +1,11 @@
-<Project><PropertyGroup><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><LangVersion>latest</LangVersion><TreatWarningsAsErrors>true</TreatWarningsAsErrors><InvariantGlobalization>false</InvariantGlobalization><DefineConstants Condition="'$(Configuration)' == 'Debug'">$(DefineConstants);SOMNING_TEST_HARNESS</DefineConstants></PropertyGroup></Project>
+<Project>
+  <PropertyGroup>
+    <Configuration Condition="'$(Configuration)' == ''">Debug</Configuration>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <DefineConstants Condition="'$(Configuration)' == 'Debug'">$(DefineConstants);SOMNING_TEST_HARNESS</DefineConstants>
+  </PropertyGroup>
+</Project>

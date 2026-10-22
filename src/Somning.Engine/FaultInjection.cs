@@ -9,7 +9,9 @@ internal static class FaultInjection
         {
             case "crash_on_transcribe": Environment.FailFast("Injected worker crash."); break;
             case "gpu_error_on_transcribe" when backend == "vulkan": return ErrorCodes.GpuError;
-            case "slow_transcribe": await Task.Delay(TimeSpan.FromSeconds(60), token); break;
+            case "slow_transcribe":
+                Console.Error.WriteLine("somning-test:inference-started");
+                await Task.Delay(TimeSpan.FromSeconds(60), token); break;
         }
         return null;
     }

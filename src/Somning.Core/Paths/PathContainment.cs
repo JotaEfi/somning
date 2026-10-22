@@ -5,7 +5,8 @@ public static class PathContainment
     {
         try
         {
-            var prefix = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)) + Path.DirectorySeparatorChar;
+            var prefix = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar,
+                Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
             var full = Path.GetFullPath(candidate);
             return full.Length > prefix.Length && full.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
         }

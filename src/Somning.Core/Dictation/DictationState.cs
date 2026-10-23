@@ -50,7 +50,8 @@ public sealed record DictationState(
     ImmutableDictionary<string, RecordingRecord> Records,
     ImmutableQueue<string> Pending,
     string? InFlight,
-    bool EngineReady)
+    bool EngineReady,
+    bool RecoveryAdmissionPending = false)
 {
     public static DictationState Initial { get; } = new(
         null,

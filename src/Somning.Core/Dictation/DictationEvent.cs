@@ -25,3 +25,6 @@ public sealed record DeliveryCompleted(string Id, DeliveryResult Result, long Co
 public sealed record EngineStatusChanged(EngineStatus Status) : DictationEvent;
 
 public sealed record RecoveryRequested(string Id, string WavPath, string? SavedText, int Attempts, string Mode) : DictationEvent;
+
+/// <summary>Startup recovery admission finished: recovery IDs are ordered before live IDs and dispatch resumes.</summary>
+public sealed record RecoveryAdmissionCompleted : DictationEvent;

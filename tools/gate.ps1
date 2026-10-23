@@ -77,7 +77,9 @@ try {
             if (-not $p.Start()) { throw 'Worker failed to start' }
             $null = $p.Handle
             $errors = $p.StandardError.ReadToEndAsync()
-            $writer = New-Object IO.StreamWriter($p.StandardInput.BaseStream, $utf8)
+            # Use Process.StandardInput directly. Wrapping its BaseStream in a second writer can
+            # desynchronize buffering with the Process-owned writer under Windows PowerShell 5.1.
+            $writer = $p.StandardInput
             $writer.AutoFlush = $true
             $ready = Read-Message $p.StandardOutput 120
             if ($ready.type -ne 'ready' -or $ready.backend -ne $backend) { throw 'Backend readiness mismatch' }
@@ -85,7 +87,8 @@ try {
             # PowerShell 5.1's hashtable JSON writer emits keys alphabetically; keep the polymorphic
             # protocol discriminator first for the engine's source-generated System.Text.Json reader.
             $request = [ordered]@{type='transcribe';id='gate';wav_path=(Join-Path $audio 'hoje.wav');language='pt'}
-            $writer.WriteLine(($request | ConvertTo-Json -Compress))
+            $requestJson = $request | ConvertTo-Json -Compress
+            $writer.WriteLine($requestJson)
             $result = Read-Message $p.StandardOutput 180
             if ($result.type -ne 'result') { throw ('Transcription response: ' + ($result | ConvertTo-Json -Compress)) }
             if ($result.outcome -ne 'text' -or $result.backend -ne $backend) { throw 'Transcription failed' }

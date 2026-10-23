@@ -26,13 +26,13 @@ Somning goes from a headless, agent-verifiable dictation loop (hotkey, mic, loca
   4. Killing the engine worker or forcing GPU failure mid-run restarts it in CPU mode without crashing the app; a recording interrupted by a crash is recovered from its spool WAV on restart
   5. Pasting while the target window changed or is elevated leaves the text on the clipboard and logs a manual-paste outcome; every dictation logs capture, load, inference and paste timings with API keys redacted
 
-**Plans:** 3/13 plans executed
+**Plans:** 4/13 plans executed
 
 Plans (all execution and verification sequential):
 - [x] 01-01-PLAN.md - Worker/protocol tracer, published gate and model fetch (wave 1)
 - [x] 01-02-PLAN.md - App-worker-clipboard skeleton and Core contracts (wave 2)
 - [x] 01-03-PLAN.md - Global hook, tap/hold and long-hold watchdog (wave 3)
-- [ ] 01-04-PLAN.md - Target/focus validation and safe paste (wave 3)
+- [x] 01-04-PLAN.md - Target/focus validation and safe paste (wave 3)
 - [ ] 01-05-PLAN.md - Fixtures, CPU VAD and whole-output filter (wave 3)
 - [ ] 01-06-PLAN.md - Durable capture, spool and recovery policy (wave 4)
 - [ ] 01-07-PLAN.md - CPU restart/retry and queued readiness (wave 4)
@@ -90,7 +90,7 @@ Plans (all execution and verification sequential):
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Dictation Loop MVP | 3/13 | In Progress | - |
+| 1. Dictation Loop MVP | 4/13 | In Progress | - |
 | 2. Overlay, Tray, Settings & Cancel | 0/TBD | Not started | - |
 | 3. Cloud Engine | 0/TBD | Not started | - |
 | 4. Packaging, Autostart & Hardening | 0/TBD | Not started | - |

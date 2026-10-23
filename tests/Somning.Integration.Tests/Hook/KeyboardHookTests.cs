@@ -1,6 +1,7 @@
 using System.Threading.Channels;
 using Somning.Core.Trigger;
 using Somning.Platform.Windows.Hook;
+using Somning.Platform.Windows.Clipboard;
 using Somning.Integration.Tests.Support;
 using Xunit;
 namespace Somning.Integration.Tests.Hook;
@@ -31,6 +32,11 @@ public sealed class KeyboardHookTests
     public async Task Paste_marker_passes_through()
     {
         Requires.Desktop(); using var window = new HotkeyTestWindow(); using var observer = new ObserverHook();
+        using var notepad = NotepadDriver.Start();
+        Requires.That(ForegroundHelper.EnsureForeground(notepad.Window, notepad.Edit), "could not acquire test-owned Notepad foreground");
+        using var clipboard = new ClipboardWriter();
+        var textSet = clipboard.SetText("Somning paste hook test.");
+        Requires.That(textSet.Success, "could not set test clipboard contents");
         var queue = Queue(); using var hook = new KeyboardHook(queue.Writer); hook.Start();
         try
         {
@@ -38,6 +44,7 @@ public sealed class KeyboardHookTests
             Assert.False(queue.Reader.TryRead(out _));
             Assert.Contains(observer.Events, e => e.Key == 0x56 && e.Down);
             Assert.Contains(observer.Events, e => e.Key == 0x56 && !e.Down);
+            Assert.Equal("Somning paste hook test.", notepad.WaitForText("Somning paste hook test."));
         }
         finally { HotkeyInjector.ReleaseAll(); }
     }

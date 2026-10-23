@@ -3,11 +3,13 @@ using System.Text;
 using Somning.Core.Engine;
 using Whisper.net;
 using Somning.Engine.Protocol;
+using Somning.Engine.Speech;
 namespace Somning.Engine;
 public sealed class WhisperHost : IDisposable
 {
     private readonly WhisperFactory factory;
     private readonly WhisperProcessor processor;
+    public SpeechGate SpeechGate { get; }
     public double LoadMs { get; }
     public double WarmMs { get; private set; }
     public WhisperHost(EngineOptions options)
@@ -17,10 +19,11 @@ public sealed class WhisperHost : IDisposable
         { UseGpu = options.Backend == "vulkan", UseFlashAttention = options.FlashAttention });
         try
         {
+            SpeechGate = new SpeechGate(new VadGate(options.Vad, options.Threads));
             processor = factory.CreateBuilder().WithLanguage(EngineDefaults.Language).WithNoContext()
                 .WithThreads(options.Threads).WithPrompt(EngineDefaults.InitialPrompt).Build();
         }
-        catch { factory.Dispose(); throw; }
+        catch { SpeechGate?.Dispose(); factory.Dispose(); throw; }
         LoadMs = watch.Elapsed.TotalMilliseconds;
     }
     public async Task WarmAsync()
@@ -42,5 +45,5 @@ public sealed class WhisperHost : IDisposable
         }
         return (text.ToString().Trim(), noSpeech, segments);
     }
-    public void Dispose() { processor.Dispose(); factory.Dispose(); }
+    public void Dispose() { processor.Dispose(); SpeechGate.Dispose(); factory.Dispose(); }
 }

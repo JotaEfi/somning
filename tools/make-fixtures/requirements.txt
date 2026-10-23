@@ -1,0 +1,3 @@
+# Optional setup reference only. Before installing, verify the flagged package at:
+# https://pypi.org/project/edge-tts/
+edge-tts==7.3.1

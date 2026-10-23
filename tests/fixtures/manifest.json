@@ -1,0 +1,145 @@
+﻿[
+    {
+        "file":  "speech/cmd-curto.wav",
+        "kind":  "speech",
+        "expected":  "Abra o arquivo de configuração e salve as alterações.",
+        "clean":  true,
+        "expect_outcome":  "text",
+        "expect_reason":  null,
+        "voice":  "pt-BR-FranciscaNeural",
+        "generator":  "edge-tts",
+        "note":  ""
+    },
+    {
+        "file":  "speech/longo-numeros.wav",
+        "kind":  "speech",
+        "expected":  "Na reunião de terça-feira, a Mariana e o Rafael apresentaram o relatório do terceiro trimestre. As vendas cresceram 12% em relação ao ano passado, e o novo escritório em Curitiba abre no dia 15 de março, com 40 pessoas na equipe.",
+        "clean":  true,
+        "expect_outcome":  "text",
+        "expect_reason":  null,
+        "voice":  "pt-BR-AntonioNeural",
+        "generator":  "edge-tts",
+        "note":  ""
+    },
+    {
+        "file":  "speech/tecnico.wav",
+        "kind":  "speech",
+        "expected":  "Preciso fazer o deploy da API no servidor de homologação e depois rodar os testes de integração.",
+        "clean":  true,
+        "expect_outcome":  "text",
+        "expect_reason":  null,
+        "voice":  "pt-BR-FranciscaNeural",
+        "generator":  "edge-tts",
+        "note":  ""
+    },
+    {
+        "file":  "speech/sim.wav",
+        "kind":  "speech",
+        "expected":  "Sim.",
+        "clean":  true,
+        "expect_outcome":  "text",
+        "expect_reason":  null,
+        "voice":  "pt-BR-FranciscaNeural",
+        "generator":  "edge-tts",
+        "note":  ""
+    },
+    {
+        "file":  "speech/e-ai.wav",
+        "kind":  "speech",
+        "expected":  "E aí, tudo bem?",
+        "clean":  true,
+        "expect_outcome":  "text",
+        "expect_reason":  null,
+        "voice":  "pt-BR-AntonioNeural",
+        "generator":  "edge-tts",
+        "note":  ""
+    },
+    {
+        "file":  "speech/obrigado.wav",
+        "kind":  "speech",
+        "expected":  "Obrigado.",
+        "clean":  false,
+        "expect_outcome":  "empty",
+        "expect_reason":  "blocklist",
+        "voice":  "pt-BR-FranciscaNeural",
+        "generator":  "edge-tts",
+        "note":  "D-12 whole-output blocklist tradeoff: a dictation consisting only of \u0027Obrigado.\u0027 is discarded."
+    },
+    {
+        "file":  "speech/quiet20.wav",
+        "kind":  "speech",
+        "expected":  "Abra o arquivo de configuração e salve as alterações.",
+        "clean":  false,
+        "expect_outcome":  "text",
+        "expect_reason":  null,
+        "voice":  "pt-BR-FranciscaNeural",
+        "generator":  "edge-tts+ffmpeg",
+        "note":  "cmd-curto reduced by 20 dB."
+    },
+    {
+        "file":  "speech/noisy.wav",
+        "kind":  "speech",
+        "expected":  "Preciso fazer o deploy da API no servidor de homologação e depois rodar os testes de integração.",
+        "clean":  false,
+        "expect_outcome":  "text",
+        "expect_reason":  null,
+        "voice":  "pt-BR-FranciscaNeural",
+        "generator":  "edge-tts+ffmpeg",
+        "note":  "Technical speech mixed with pink noise at amplitude 0.05."
+    },
+    {
+        "file":  "nonspeech/tap.wav",
+        "kind":  "tap",
+        "expected":  null,
+        "clean":  false,
+        "expect_outcome":  "empty",
+        "expect_reason":  "too_short",
+        "voice":  "pt-BR-FranciscaNeural",
+        "generator":  "ffmpeg",
+        "note":  "First 0.2 seconds of cmd-curto."
+    },
+    {
+        "file":  "nonspeech/silence.wav",
+        "kind":  "silence",
+        "expected":  null,
+        "clean":  false,
+        "expect_outcome":  "empty",
+        "expect_reason":  "vad_no_speech",
+        "voice":  null,
+        "generator":  "ffmpeg",
+        "note":  "Generated 3-second silence audio."
+    },
+    {
+        "file":  "nonspeech/noise.wav",
+        "kind":  "noise",
+        "expected":  null,
+        "clean":  false,
+        "expect_outcome":  "empty",
+        "expect_reason":  "vad_no_speech",
+        "voice":  null,
+        "generator":  "ffmpeg",
+        "note":  "Generated 3-second noise audio."
+    },
+    {
+        "file":  "nonspeech/tone.wav",
+        "kind":  "tone",
+        "expected":  null,
+        "clean":  false,
+        "expect_outcome":  "empty",
+        "expect_reason":  "vad_no_speech",
+        "voice":  null,
+        "generator":  "ffmpeg",
+        "note":  "Generated 2-second tone audio."
+    },
+    {
+        "file":  "tracer/hoje.wav",
+        "kind":  "speech",
+        "expected":  "Hoje vamos testar o reconhecimento de voz em português do Brasil. O aplicativo deve escrever esta frase com rapidez e precisão.",
+        "clean":  true,
+        "expect_outcome":  "text",
+        "expect_reason":  null,
+        "voice":  "pt-BR-FranciscaNeural",
+        "generator":  "existing-fixture",
+        "note":  "Plan 01 CPU/Vulkan tracer sample."
+    }
+]

@@ -5,12 +5,26 @@ using Somning.App.Modes;
 using Somning.Core.Engine;
 using Somning.Core.Ports;
 using Somning.Platform.Windows.Audio;
+using Somning.Platform.Windows.Processes;
 #if SOMNING_TEST_HARNESS
 using Somning.App.TestHarness;
 #endif
 
 if (args.Length > 0 && args[0] == "--transcribe-file")
     return await RunTranscribeFileAsync(args);
+
+#if SOMNING_TEST_HARNESS
+var skipSingleInstance = HarnessOptions.IsRequested(args);
+#else
+var skipSingleInstance = false;
+#endif
+
+using SingleInstanceMutex? singleInstance = skipSingleInstance ? null : new SingleInstanceMutex();
+if (singleInstance is { IsFirstInstance: false })
+{
+    // APP-03: Second instance exits immediately without error
+    return 0;
+}
 
 Func<IAudioSource> audioSourceFactory = () => new WasapiAudioSource();
 Action<AppComposition, Action>? configure = null;

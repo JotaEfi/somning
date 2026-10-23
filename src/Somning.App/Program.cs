@@ -52,7 +52,8 @@ if (args.Length > 0)
 
 return await RunDictationAsync(audioSourceFactory, configure);
 
-// Startup order (review H9): logging → harness pipe (Debug) → loop + tick → keyboard hook → engine start in the background.
+// Startup order (review H9): logging → recording snapshot + harness pipe (Debug) → loop + tick → keyboard hook →
+// recovery and engine start in the background (neither awaited).
 static async Task<int> RunDictationAsync(Func<IAudioSource> audioSourceFactory, Action<AppComposition, Action>? configure)
 {
     LoggingSetup.Initialize();
@@ -67,6 +68,7 @@ static async Task<int> RunDictationAsync(Func<IAudioSource> audioSourceFactory, 
         app.Hook.Start(); // KeyboardHook installed BEFORE the engine StartAsync (below) is even called
         Log.Information("hook installed");
         app.Host.Notify("hook_installed");
+        _ = app.StartRecoveryInBackground(); // pre-hook snapshot only; posts RecoveryRequested into the same FIFO (D-11)
         _ = app.StartEngineInBackground(); // NOT awaited: the hook must work while the model loads (STT-04)
         try { await Task.Delay(Timeout.Infinite, shutdown.Token); }
         catch (OperationCanceledException) { }

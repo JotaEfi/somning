@@ -28,8 +28,11 @@ public sealed class DictationHost : IAsyncDisposable
     private int lastIdSuffix;
     private int started;
 
-    public DictationHost(Func<bool> modifiersDown, TriggerOptions? triggerOptions = null, Func<string, bool>? idTaken = null)
+    /// <param name="initialState">Startup state; the app passes RecoveryAdmissionPending=true (D-11, H9).</param>
+    public DictationHost(Func<bool> modifiersDown, TriggerOptions? triggerOptions = null, Func<string, bool>? idTaken = null,
+        DictationState? initialState = null)
     {
+        state = initialState ?? DictationState.Initial;
         this.modifiersDown = modifiersDown ?? throw new ArgumentNullException(nameof(modifiersDown));
         interpreter = new TriggerInterpreter(triggerOptions);
         this.idTaken = idTaken ?? (_ => false);

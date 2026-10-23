@@ -2,6 +2,7 @@ using System.Threading.Channels;
 using Serilog;
 using Somning.App.Dictation;
 using Somning.App.Engine;
+using Somning.App.Recovery;
 using Somning.Core.Dictation;
 using Somning.Core.Engine;
 using Somning.Core.Paths;
@@ -27,6 +28,7 @@ public sealed class AppComposition : IAsyncDisposable
     private readonly ClipboardWriter clipboard;
     private readonly CancellationTokenSource lifetime = new();
     private Task engineStart = Task.CompletedTask;
+    private Task recovery = Task.CompletedTask;
 
     public AppComposition(Func<IAudioSource> audioSourceFactory)
     {
@@ -40,7 +42,11 @@ public sealed class AppComposition : IAsyncDisposable
         var paster = new TargetPaster(clipboard, probe, integrity, new ModifierWaiter(), new PasteInjector());
         Sidecars = new SidecarStore(SomningPaths.RecordingsDir);
         Hook = new KeyboardHook(keys.Writer);
-        Host = new DictationHost(PhysicalKeyState.AreChordModifiersDown, idTaken: IdTaken);
+        // Pre-hook snapshot (H9): paths/IDs only; repair, model wait and inference all happen later in RecoveryService.
+        Snapshot = RecoverySnapshot.Take(SomningPaths.RecordingsDir);
+        // Live captures run normally while admission is pending; only transcription/copy dispatch waits (D-05, D-11).
+        Host = new DictationHost(PhysicalKeyState.AreChordModifiersDown, idTaken: IdTaken,
+            initialState: DictationState.Initial with { RecoveryAdmissionPending = true });
         Runner = new EffectRunner(e => Host.Post(e), Sidecars, SomningPaths.RecordingsDir, audioSourceFactory, probe, Engine, paster);
         Engine.RequestWritten += Runner.OnRequestWritten;
         Engine.StatusChanged += status => Host.Post(new EngineStatusChanged(status));
@@ -52,6 +58,7 @@ public sealed class AppComposition : IAsyncDisposable
     public DictationHost Host { get; }
     public EffectRunner Runner { get; }
     public SidecarStore Sidecars { get; }
+    public RecoverySnapshot Snapshot { get; }
 
 #if SOMNING_TEST_HARNESS
     public HarnessJournal? Journal { get; private set; }
@@ -89,6 +96,21 @@ public sealed class AppComposition : IAsyncDisposable
     {
         engineStart = Task.Run(RunEngineStartAsync);
         return engineStart;
+    }
+
+    /// <summary>
+    /// Starts startup recovery in the background right after the hook is installed; it does not await engine readiness
+    /// and always completes recovery admission (RecoveryAdmissionCompleted), even on failure.
+    /// </summary>
+    public Task StartRecoveryInBackground()
+    {
+        Func<CancellationToken, Task>? beforeProcessing = null;
+#if SOMNING_TEST_HARNESS
+        beforeProcessing = RecoveryGate.WaitIfArmedAsync;
+#endif
+        var service = new RecoveryService(Snapshot, Sidecars, SomningPaths.RecordingsDir, Host, beforeProcessing);
+        recovery = Task.Run(() => service.RunAsync(lifetime.Token));
+        return recovery;
     }
 
     private async Task RunEngineStartAsync()
@@ -129,6 +151,8 @@ public sealed class AppComposition : IAsyncDisposable
         if (Pipe is not null) await Pipe.DisposeAsync().ConfigureAwait(false);
 #endif
         Hook.Dispose();
+        try { await recovery.ConfigureAwait(false); }
+        catch (Exception ex) { Log.Debug(ex, "Recovery ended during shutdown"); }
         await Host.DisposeAsync().ConfigureAwait(false);
         await Runner.DisposeAsync().ConfigureAwait(false);
         try { await engineStart.ConfigureAwait(false); }

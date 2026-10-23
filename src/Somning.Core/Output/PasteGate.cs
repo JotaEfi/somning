@@ -2,6 +2,10 @@ namespace Somning.Core.Output;
 
 public static class PasteGate
 {
+    /// <summary>
+    /// Requires the same top-level and focused HWND at capture and delivery. Win32 focus data cannot
+    /// distinguish DOM fields hosted inside one browser render widget; that remains a Phase 1 limit.
+    /// </summary>
     public static PasteDecision Decide(PasteContext ctx)
     {
         if (!ctx.ClipboardSet)

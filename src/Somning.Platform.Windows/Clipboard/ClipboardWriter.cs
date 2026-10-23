@@ -2,7 +2,12 @@ using System.Runtime.InteropServices;
 using System.Text;
 namespace Somning.Platform.Windows.Clipboard;
 public sealed record ClipboardSetResult(bool Success, uint SequenceBefore, uint SequenceAfter, int Attempts, string? Error);
-public sealed class ClipboardWriter : IDisposable
+public interface IClipboardWriter
+{
+    ClipboardSetResult SetText(string text);
+    uint GetSequenceNumber();
+}
+public sealed class ClipboardWriter : IClipboardWriter, IDisposable
 {
     private readonly MessageOnlyWindow owner = new();
     public ClipboardSetResult SetText(string text)
@@ -10,6 +15,7 @@ public sealed class ClipboardWriter : IDisposable
         try { return owner.Invoke(() => WriteText(text)); }
         catch (Exception) { return new(false, 0, 0, 0, "clipboard_unavailable"); }
     }
+    public uint GetSequenceNumber() => Native.GetClipboardSequenceNumber();
     private ClipboardSetResult WriteText(string text)
     {
         uint before = Native.GetClipboardSequenceNumber(); int attempts = 0; bool opened = false;

@@ -146,7 +146,7 @@ metrics:
 
 **Total deviations:** 3 (2 automatic correctness fixes and 1 plan-ordering adjustment). The plan's engine behavior and acceptance thresholds remain unchanged.
 
-## Verification
+## Executed checks
 
 - `dotnet test --project tests/Somning.Core.Tests --filter-class "*.PostFilterTests"` - passed, 24/24.
 - `SOMNING_STRICT=1 dotnet test --project tests/Somning.Integration.Tests --filter-class "*.FixtureAccuracyTests"` - passed, 2/2; checks all clean and non-clean speech rows on the local CPU model.

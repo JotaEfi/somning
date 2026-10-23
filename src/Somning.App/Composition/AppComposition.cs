@@ -7,11 +7,13 @@ using Somning.App.Recovery;
 using Somning.Core.Dictation;
 using Somning.Core.Engine;
 using Somning.Core.Output;
+using Somning.Core.Overlay;
 using Somning.Core.Paths;
 using Somning.Core.Ports;
 using Somning.Core.Trigger;
 using Somning.Platform.Windows.Clipboard;
 using Somning.Platform.Windows.Hook;
+using Somning.Platform.Windows.Overlay;
 using Somning.Platform.Windows.Paste;
 using Somning.Platform.Windows.Recording;
 using Somning.Platform.Windows.Tray;
@@ -54,7 +56,7 @@ public sealed class AppComposition : IAsyncDisposable
         Host = new DictationHost(PhysicalKeyState.AreChordModifiersDown, idTaken: IdTaken,
             initialState: DictationState.Initial with { RecoveryAdmissionPending = true });
         Hook.IsRecordingActive = () => Host.State.Capture is not null;
-        Runner = new EffectRunner(e => Host.Post(e), Sidecars, SomningPaths.RecordingsDir, audioSourceFactory, probe, Engine, paster, History);
+        Runner = new EffectRunner(e => Host.Post(e), Sidecars, SomningPaths.RecordingsDir, audioSourceFactory, probe, Engine, paster, History, () => Overlay, AudioLevelTracker);
         Engine.RequestWritten += Runner.OnRequestWritten;
         Engine.StatusChanged += status => Host.Post(new EngineStatusChanged(status));
         Host.Notified += OnNotified;
@@ -67,7 +69,14 @@ public sealed class AppComposition : IAsyncDisposable
     public SidecarStore Sidecars { get; }
     public RecoverySnapshot Snapshot { get; }
     public ITranscriptHistory History { get; } = new TranscriptHistory();
+    public AudioLevelTracker AudioLevelTracker { get; } = new();
+    public IOverlayView? Overlay { get; private set; }
     public TrayIconManager? Tray { get; private set; }
+
+    public void EnableOverlay(IOverlayView? customOverlay = null)
+    {
+        Overlay = customOverlay ?? new OverlayWindowManager();
+    }
 
     public void EnableTray(Action requestShutdown)
     {
@@ -215,6 +224,7 @@ public sealed class AppComposition : IAsyncDisposable
 #if SOMNING_TEST_HARNESS
         if (Pipe is not null) await Pipe.DisposeAsync().ConfigureAwait(false);
 #endif
+        Overlay?.Dispose();
         Tray?.Dispose();
         Hook.Dispose();
         try { await recovery.ConfigureAwait(false); }

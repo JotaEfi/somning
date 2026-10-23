@@ -4,13 +4,14 @@ using Somning.Platform.Windows.Recording;
 namespace Somning.App.Dictation;
 
 /// <summary>One live microphone capture: its spool writer, its audio source and the pending start.</summary>
-public sealed class CaptureSession(string Id, SpoolWriter Writer, IAudioSource Source, Task<AudioStartInfo> StartTask)
+public sealed class CaptureSession(string Id, SpoolWriter Writer, IAudioSource Source, Task<AudioStartInfo> StartTask, IPcmSink? Sink = null)
 {
     private int released;
     private int ending;
 
     public string Id { get; } = Id;
     public SpoolWriter Writer { get; } = Writer;
+    public IPcmSink Sink { get; } = Sink ?? Writer;
     public IAudioSource Source { get; } = Source;
     public Task<AudioStartInfo> StartTask { get; } = StartTask;
     public string WavPath { get; init; } = "";

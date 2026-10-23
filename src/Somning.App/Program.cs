@@ -80,6 +80,7 @@ static async Task<int> RunDictationAsync(Func<IAudioSource> audioSourceFactory, 
         configure?.Invoke(app, () => { try { shutdown.Cancel(); } catch (ObjectDisposedException) { } });
         if (configure is null)
         {
+            app.EnableOverlay();
             app.EnableTray(() => { try { shutdown.Cancel(); } catch (ObjectDisposedException) { } });
         }
         app.StartLoop();

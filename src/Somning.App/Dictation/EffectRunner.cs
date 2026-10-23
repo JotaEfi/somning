@@ -5,9 +5,11 @@ using Somning.App.Logging;
 using Somning.Core.Dictation;
 using Somning.Core.Engine;
 using Somning.Core.Output;
+using Somning.Core.Overlay;
 using Somning.Core.Ports;
 using Somning.Core.Recording;
 using Somning.Platform.Windows.Audio;
+using Somning.Platform.Windows.Overlay;
 using Somning.Platform.Windows.Recording;
 
 namespace Somning.App.Dictation;
@@ -27,6 +29,8 @@ public sealed class EffectRunner : IAsyncDisposable
     private readonly ITranscriber transcriber;
     private readonly ITextOutput output;
     private readonly ITranscriptHistory history;
+    private readonly Func<IOverlayView?>? getOverlay;
+    private readonly AudioLevelTracker? audioTracker;
     private readonly ConcurrentDictionary<string, CaptureSession> sessions = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, string> transcribing = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTimeOffset> createdUtc = new(StringComparer.Ordinal);
@@ -35,7 +39,7 @@ public sealed class EffectRunner : IAsyncDisposable
 
     public EffectRunner(Action<DictationEvent> post, SidecarStore sidecars, string recordingsDir,
         Func<IAudioSource> audioSourceFactory, ITargetProbe targetProbe, ITranscriber transcriber, ITextOutput output,
-        ITranscriptHistory? history = null)
+        ITranscriptHistory? history = null, Func<IOverlayView?>? getOverlay = null, AudioLevelTracker? audioTracker = null)
     {
         this.post = post ?? throw new ArgumentNullException(nameof(post));
         this.sidecars = sidecars ?? throw new ArgumentNullException(nameof(sidecars));
@@ -46,6 +50,8 @@ public sealed class EffectRunner : IAsyncDisposable
         this.transcriber = transcriber ?? throw new ArgumentNullException(nameof(transcriber));
         this.output = output ?? throw new ArgumentNullException(nameof(output));
         this.history = history ?? new TranscriptHistory();
+        this.getOverlay = getOverlay;
+        this.audioTracker = audioTracker;
     }
 
     /// <summary>Runs one reducer batch in order. Called on the loop task only.</summary>
@@ -70,22 +76,35 @@ public sealed class EffectRunner : IAsyncDisposable
         switch (effect)
         {
             case UpdateSidecar update: Persist(update.Sidecar); break;
-            case StartCapture start: BeginCapture(start.Id); break;
-            case StopCapture stop: EndCapture(stop.Id); break;
-            case DiscardCapture discard: Discard(discard.Id); break;
+            case StartCapture start:
+                audioTracker?.Reset();
+                getOverlay?.Invoke()?.ShowListening(audioTracker?.GenerateWaveformBars(5) ?? [0.15f, 0.15f, 0.15f, 0.15f, 0.15f]);
+                BeginCapture(start.Id);
+                break;
+            case StopCapture stop:
+                getOverlay?.Invoke()?.ShowTranscribing();
+                EndCapture(stop.Id);
+                break;
+            case DiscardCapture discard:
+                getOverlay?.Invoke()?.Hide();
+                Discard(discard.Id);
+                break;
             case Transcribe transcribe: Track(TranscribeAsync(transcribe.Id, transcribe.WavPath)); break;
             case Deliver deliver:
                 history.Record(deliver.Text);
+                getOverlay?.Invoke()?.Hide();
                 Track(DeliverAsync(deliver.Id, ct => DeliverToTargetAsync(deliver, ct)));
                 break;
             case CopyOnly copy:
                 history.Record(copy.Text);
+                getOverlay?.Invoke()?.Hide();
                 Track(DeliverAsync(copy.Id, ct => output.CopyOnlyAsync(copy.Text, ct)));
                 break;
             case EmitMetrics emit:
                 MetricsLogger.Write(emit.Metrics);
                 lock (createdUtc) createdUtc.Remove(emit.Metrics.Id);
                 post(new NotificationPosted(new DictationNotification("outcome", emit.Metrics.Id, emit.Metrics)));
+                HandleOutcomeOverlay(emit.Metrics.Outcome);
                 break;
             default: Log.Warning("Unknown effect {EffectType}", effect.GetType().Name); break;
         }
@@ -137,7 +156,13 @@ public sealed class EffectRunner : IAsyncDisposable
 
         // The fault handler is attached before StartAsync so a fault at any point reaches this session (M11).
         var started = new TaskCompletionSource<AudioStartInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var session = new CaptureSession(id, writer, source, started.Task) { WavPath = wavPath };
+        IPcmSink sink = writer;
+        var activeOverlay = getOverlay?.Invoke();
+        if (activeOverlay is not null && audioTracker is not null)
+        {
+            sink = new OverlayAudioSink(writer, audioTracker, activeOverlay);
+        }
+        var session = new CaptureSession(id, writer, source, started.Task, sink) { WavPath = wavPath };
         source.Faulted += fault => OnFaulted(session, fault);
         sessions[id] = session;
         Track(RunStartAsync(session, started));
@@ -148,7 +173,7 @@ public sealed class EffectRunner : IAsyncDisposable
         AudioStartInfo info;
         try
         {
-            info = await session.Source.StartAsync(session.Writer, lifetime.Token).ConfigureAwait(false);
+            info = await session.Source.StartAsync(session.Sink, lifetime.Token).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -157,7 +182,9 @@ public sealed class EffectRunner : IAsyncDisposable
             _ = started.Task.Exception; // observed: waiters (stop/fault) return without posting
             sessions.TryRemove(session.Id, out _);
             await session.ReleaseAsync().ConfigureAwait(false);
-            post(new CaptureStartFailed(session.Id, StartFailureCode(ex)));
+            var failureCode = StartFailureCode(ex);
+            HandleStartFailureOverlay(failureCode);
+            post(new CaptureStartFailed(session.Id, failureCode));
             return;
         }
         started.TrySetResult(info);
@@ -339,5 +366,53 @@ public sealed class EffectRunner : IAsyncDisposable
         }
         await WhenIdleAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
         lifetime.Dispose();
+    }
+
+    private void HandleOutcomeOverlay(string outcome)
+    {
+        var activeOverlay = getOverlay?.Invoke();
+        if (activeOverlay is null) return;
+
+        if (outcome is "silence_only")
+        {
+            activeOverlay.ShowNotice(OverlayNoticeKind.SilenceOnly);
+            _ = Task.Delay(1800).ContinueWith(_ => activeOverlay.Hide(), TaskScheduler.Default);
+        }
+        else if (outcome is "no_speech")
+        {
+            activeOverlay.ShowNotice(OverlayNoticeKind.NothingDetected);
+            _ = Task.Delay(1800).ContinueWith(_ => activeOverlay.Hide(), TaskScheduler.Default);
+        }
+        else
+        {
+            activeOverlay.Hide();
+        }
+    }
+
+    private void HandleStartFailureOverlay(string failureCode)
+    {
+        var activeOverlay = getOverlay?.Invoke();
+        if (activeOverlay is null) return;
+
+        if (failureCode is "no_device")
+        {
+            activeOverlay.ShowNotice(OverlayNoticeKind.MicMissing);
+            _ = Task.Delay(1800).ContinueWith(_ => activeOverlay.Hide(), TaskScheduler.Default);
+        }
+        else if (failureCode is "privacy_blocked")
+        {
+            activeOverlay.ShowNotice(OverlayNoticeKind.MicBlocked);
+            _ = Task.Delay(1800).ContinueWith(_ => activeOverlay.Hide(), TaskScheduler.Default);
+        }
+    }
+
+    private sealed class OverlayAudioSink(IPcmSink inner, AudioLevelTracker tracker, IOverlayView overlay) : IPcmSink
+    {
+        public void Write(ReadOnlySpan<byte> pcm16kMonoS16)
+        {
+            inner.Write(pcm16kMonoS16);
+            tracker.Update(pcm16kMonoS16);
+            overlay.UpdateWaveform(tracker.GenerateWaveformBars(5));
+        }
     }
 }

@@ -76,7 +76,9 @@ Plans (all execution and verification sequential):
   2. No network, invalid key, rate limit and timeout each show a distinct pt-BR overlay message, the recording is kept for retry, and no silent fallback to local occurs
   3. Cloud is never used unless the user selected it and entered a key; logs and error output contain no API keys
 
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 03-01-PLAN.md - Cloud transcriber contracts, Groq & OpenAI clients, error classification & key masking (wave 1)
+- [ ] 03-02-PLAN.md - Mock HTTP fixture suite, recording retention & cloud adapter integration (wave 2)
 **UI hint**: yes
 
 ### Phase 4: Packaging, Autostart & Hardening
@@ -98,5 +100,5 @@ Plans (all execution and verification sequential):
 |-------|----------------|--------|-----------|
 | 1. Dictation Loop MVP | 13/13 | Complete | 2026-10-23 |
 | 2. Overlay, Tray, Settings & Cancel | 6/6 | Complete | 2026-10-23 |
-| 3. Cloud Engine | 0/TBD | Not started | - |
+| 3. Cloud Engine | 0/2 | Not started | - |
 | 4. Packaging, Autostart & Hardening | 0/TBD | Not started | - |

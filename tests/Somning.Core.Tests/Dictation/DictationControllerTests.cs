@@ -33,7 +33,7 @@ public sealed class DictationControllerTests
         Assert.Equal("C:/rec/rec-1.wav", transcribe.WavPath);
 
         const string text = "Olá, mundo.";
-        var (transcribed, textEffects) = Step(queued, new TranscriptionCompleted("rec-1", Text(text), 7200));
+        var (transcribed, textEffects) = Step(queued, new TranscriptionCompleted("rec-1", TextResult(text), 7200));
         Assert.Collection(textEffects,
             effect =>
             {

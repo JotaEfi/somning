@@ -24,7 +24,7 @@ internal static class DictationTestKit
     public static DictationEvent Stopped(string id, PasteTarget target, long captureMs = 5000) =>
         new CaptureStopped(id, target, captureMs, $"C:/rec/{id}.wav");
 
-    public static EngineTranscription Text(string text) =>
+    public static EngineTranscription TextResult(string text) =>
         new(text, "text", null, null, false, 5000, 12, 900, 3, 0, 0, "vulkan", "ggml-large-v3-turbo-q5_0.bin", 0.01f);
 
     public static EngineTranscription Empty(string reason = "no_speech") =>

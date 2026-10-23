@@ -51,6 +51,16 @@ internal static class DictationTestKit
         return (state, all);
     }
 
+    /// <summary>Ready engine, one recording started, recording, stopped and dispatched (InFlight = id).</summary>
+    public static DictationState InFlightRecording(string id = "rec-1", TriggerMode mode = TriggerMode.Toggle,
+        StopReason reason = StopReason.Tap, long startMs = 1000, long stopMs = 6000) =>
+        Run(DictationState.Initial, Ready(), Start(startMs, id), new CaptureStarted(id, 40), Stop(stopMs, mode, reason),
+            Stopped(id, TargetA)).State;
+
+    /// <summary>Same as <see cref="InFlightRecording"/> plus a successful transcription (stage transcribed).</summary>
+    public static DictationState TranscribedRecording(string id, string text) =>
+        Step(InFlightRecording(id), new TranscriptionCompleted(id, TextResult(text), 7000)).State;
+
     public static List<DictationMetrics> Metrics(IEnumerable<DictationEffect> effects) =>
         effects.OfType<EmitMetrics>().Select(effect => effect.Metrics).ToList();
 }

@@ -1,4 +1,4 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using Somning.Platform.Windows.Audio;
@@ -51,7 +51,9 @@ public sealed class CaptureConverterTests
 
         var converter = CaptureConverter.Create(input);
         var output = ReadAll(converter);
-        var peak = ReadOnlySpanSamples(output).Max(sample => Math.Abs((int)sample));
+        var samples = ReadOnlySpanSamples(output);
+        // Exclude the resampler's finite impulse startup/shutdown ringing around this DC test signal.
+        var peak = samples.Skip(1_600).Take(samples.Length - 3_200).Max(sample => Math.Abs((int)sample));
 
         Assert.Equal(16_000, converter.WaveFormat.SampleRate);
         Assert.Equal(1, converter.WaveFormat.Channels);
@@ -133,3 +135,8 @@ public sealed class CaptureConverterTests
         }
     }
 }
+
+
+
+
+

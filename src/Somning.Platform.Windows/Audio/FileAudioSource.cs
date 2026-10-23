@@ -60,15 +60,16 @@ public sealed class FileAudioSource(string wavPath, bool realTime = true, TimeSp
         try
         {
             using var reader = new WaveFileReader(path);
-            if (reader.WaveFormat.SampleRate != SampleRate || reader.WaveFormat.Channels != 1 ||
-                reader.WaveFormat.BitsPerSample != 16 || reader.WaveFormat.Encoding != WaveFormatEncoding.Pcm)
-                throw new NotSupportedException("Task 1 file input must be 16 kHz mono signed PCM16.");
+            var sourceIsTargetFormat = reader.WaveFormat.SampleRate == SampleRate &&
+                reader.WaveFormat.Channels == 1 && reader.WaveFormat.BitsPerSample == 16 &&
+                reader.WaveFormat.Encoding == WaveFormatEncoding.Pcm;
+            IWaveProvider pcmProvider = sourceIsTargetFormat ? reader : CaptureConverter.Create(reader);
 
             var buffer = new byte[FramesPerChunk * BytesPerSample];
             var watch = Stopwatch.StartNew();
             while (!ct.IsCancellationRequested)
             {
-                var bytesRead = reader.Read(buffer, 0, buffer.Length);
+                var bytesRead = pcmProvider.Read(buffer.AsSpan());
                 if (bytesRead == 0) break;
                 if ((bytesRead & 1) != 0) throw new InvalidDataException("Input ended with a partial PCM16 sample.");
                 sink.Write(buffer.AsSpan(0, bytesRead));

@@ -82,7 +82,9 @@ try {
             $ready = Read-Message $p.StandardOutput 120
             if ($ready.type -ne 'ready' -or $ready.backend -ne $backend) { throw 'Backend readiness mismatch' }
             if ($backend -eq 'vulkan' -and -not $ready.gpu_in_use) { throw 'Vulkan GPU not in use' }
-            $request = @{type='transcribe';id='gate';wav_path=(Join-Path $audio 'hoje.wav');language='pt'}
+            # PowerShell 5.1's hashtable JSON writer emits keys alphabetically; keep the polymorphic
+            # protocol discriminator first for the engine's source-generated System.Text.Json reader.
+            $request = [ordered]@{type='transcribe';id='gate';wav_path=(Join-Path $audio 'hoje.wav');language='pt'}
             $writer.WriteLine(($request | ConvertTo-Json -Compress))
             $result = Read-Message $p.StandardOutput 180
             if ($result.type -ne 'result') { throw ('Transcription response: ' + ($result | ConvertTo-Json -Compress)) }

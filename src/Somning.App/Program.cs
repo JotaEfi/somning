@@ -78,6 +78,10 @@ static async Task<int> RunDictationAsync(Func<IAudioSource> audioSourceFactory, 
     {
         await using var app = new AppComposition(audioSourceFactory);
         configure?.Invoke(app, () => { try { shutdown.Cancel(); } catch (ObjectDisposedException) { } });
+        if (configure is null)
+        {
+            app.EnableTray(() => { try { shutdown.Cancel(); } catch (ObjectDisposedException) { } });
+        }
         app.StartLoop();
         app.Hook.Start(); // KeyboardHook installed BEFORE the engine StartAsync (below) is even called
         Log.Information("hook installed");

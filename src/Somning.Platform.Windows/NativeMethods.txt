@@ -65,3 +65,11 @@ SetWindowPos
 SetFocus
 GetCurrentProcessId
 VIRTUAL_KEY
+Shell_NotifyIcon
+NOTIFYICONDATAW
+CreatePopupMenu
+AppendMenu
+TrackPopupMenuEx
+DestroyMenu
+GetCursorPos
+PostMessage

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Threading.Channels;
 using Serilog;
 using Somning.App.Dictation;
@@ -5,6 +6,7 @@ using Somning.App.Engine;
 using Somning.App.Recovery;
 using Somning.Core.Dictation;
 using Somning.Core.Engine;
+using Somning.Core.Output;
 using Somning.Core.Paths;
 using Somning.Core.Ports;
 using Somning.Core.Trigger;
@@ -12,6 +14,7 @@ using Somning.Platform.Windows.Clipboard;
 using Somning.Platform.Windows.Hook;
 using Somning.Platform.Windows.Paste;
 using Somning.Platform.Windows.Recording;
+using Somning.Platform.Windows.Tray;
 #if SOMNING_TEST_HARNESS
 using Somning.App.TestHarness;
 #endif
@@ -27,8 +30,11 @@ public sealed class AppComposition : IAsyncDisposable
     private readonly Channel<KeyEvent> keys = Channel.CreateUnbounded<KeyEvent>(new UnboundedChannelOptions { SingleReader = true });
     private readonly ClipboardWriter clipboard;
     private readonly CancellationTokenSource lifetime = new();
+    private readonly TargetPaster paster;
+    private readonly ForegroundProbe probe;
     private Task engineStart = Task.CompletedTask;
     private Task recovery = Task.CompletedTask;
+    private Action? shutdownCallback;
 
     public AppComposition(Func<IAudioSource> audioSourceFactory)
     {
@@ -38,8 +44,8 @@ public sealed class AppComposition : IAsyncDisposable
         Engine = new EngineSupervisor(options: SupervisorOptionsForHost());
         clipboard = new ClipboardWriter();
         var integrity = new IntegrityReader();
-        var probe = new ForegroundProbe(integrity);
-        var paster = new TargetPaster(clipboard, probe, integrity, new ModifierWaiter(), new PasteInjector());
+        probe = new ForegroundProbe(integrity);
+        paster = new TargetPaster(clipboard, probe, integrity, new ModifierWaiter(), new PasteInjector());
         Sidecars = new SidecarStore(SomningPaths.RecordingsDir);
         Hook = new KeyboardHook(keys.Writer);
         // Pre-hook snapshot (H9): paths/IDs only; repair, model wait and inference all happen later in RecoveryService.
@@ -48,7 +54,7 @@ public sealed class AppComposition : IAsyncDisposable
         Host = new DictationHost(PhysicalKeyState.AreChordModifiersDown, idTaken: IdTaken,
             initialState: DictationState.Initial with { RecoveryAdmissionPending = true });
         Hook.IsRecordingActive = () => Host.State.Capture is not null;
-        Runner = new EffectRunner(e => Host.Post(e), Sidecars, SomningPaths.RecordingsDir, audioSourceFactory, probe, Engine, paster);
+        Runner = new EffectRunner(e => Host.Post(e), Sidecars, SomningPaths.RecordingsDir, audioSourceFactory, probe, Engine, paster, History);
         Engine.RequestWritten += Runner.OnRequestWritten;
         Engine.StatusChanged += status => Host.Post(new EngineStatusChanged(status));
         Host.Notified += OnNotified;
@@ -60,6 +66,46 @@ public sealed class AppComposition : IAsyncDisposable
     public EffectRunner Runner { get; }
     public SidecarStore Sidecars { get; }
     public RecoverySnapshot Snapshot { get; }
+    public ITranscriptHistory History { get; } = new TranscriptHistory();
+    public TrayIconManager? Tray { get; private set; }
+
+    public void EnableTray(Action requestShutdown)
+    {
+        shutdownCallback = requestShutdown;
+        Tray = new TrayIconManager();
+        Tray.CanRepaste = () => History.HasTranscript;
+        Tray.RepasteLastRequested += () => _ = RepasteLastAsync();
+        Tray.OpenLogsRequested += () => OpenLogsDirectory();
+        Tray.ExitRequested += () => shutdownCallback?.Invoke();
+    }
+
+    public async Task<bool> RepasteLastAsync()
+    {
+        if (!History.HasTranscript || string.IsNullOrEmpty(History.LastTranscript))
+            return false;
+
+        var text = History.LastTranscript;
+        var target = probe.Capture();
+        var result = await paster.DeliverAsync(text, target, CancellationToken.None).ConfigureAwait(false);
+        Log.Information("Repasted last transcript outcome={Outcome}", result.Outcome);
+        return result.Outcome is "pasted" or "copied" or "paste_deferred";
+    }
+
+    public static void OpenLogsDirectory()
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = SomningPaths.LogsDir,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to open logs directory");
+        }
+    }
 
 #if SOMNING_TEST_HARNESS
     public HarnessJournal? Journal { get; private set; }
@@ -169,6 +215,7 @@ public sealed class AppComposition : IAsyncDisposable
 #if SOMNING_TEST_HARNESS
         if (Pipe is not null) await Pipe.DisposeAsync().ConfigureAwait(false);
 #endif
+        Tray?.Dispose();
         Hook.Dispose();
         try { await recovery.ConfigureAwait(false); }
         catch (Exception ex) { Log.Debug(ex, "Recovery ended during shutdown"); }

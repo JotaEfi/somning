@@ -26,6 +26,7 @@ public sealed class EffectRunner : IAsyncDisposable
     private readonly ITargetProbe targetProbe;
     private readonly ITranscriber transcriber;
     private readonly ITextOutput output;
+    private readonly ITranscriptHistory history;
     private readonly ConcurrentDictionary<string, CaptureSession> sessions = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, string> transcribing = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTimeOffset> createdUtc = new(StringComparer.Ordinal);
@@ -33,7 +34,8 @@ public sealed class EffectRunner : IAsyncDisposable
     private readonly CancellationTokenSource lifetime = new();
 
     public EffectRunner(Action<DictationEvent> post, SidecarStore sidecars, string recordingsDir,
-        Func<IAudioSource> audioSourceFactory, ITargetProbe targetProbe, ITranscriber transcriber, ITextOutput output)
+        Func<IAudioSource> audioSourceFactory, ITargetProbe targetProbe, ITranscriber transcriber, ITextOutput output,
+        ITranscriptHistory? history = null)
     {
         this.post = post ?? throw new ArgumentNullException(nameof(post));
         this.sidecars = sidecars ?? throw new ArgumentNullException(nameof(sidecars));
@@ -43,6 +45,7 @@ public sealed class EffectRunner : IAsyncDisposable
         this.targetProbe = targetProbe ?? throw new ArgumentNullException(nameof(targetProbe));
         this.transcriber = transcriber ?? throw new ArgumentNullException(nameof(transcriber));
         this.output = output ?? throw new ArgumentNullException(nameof(output));
+        this.history = history ?? new TranscriptHistory();
     }
 
     /// <summary>Runs one reducer batch in order. Called on the loop task only.</summary>
@@ -71,8 +74,14 @@ public sealed class EffectRunner : IAsyncDisposable
             case StopCapture stop: EndCapture(stop.Id); break;
             case DiscardCapture discard: Discard(discard.Id); break;
             case Transcribe transcribe: Track(TranscribeAsync(transcribe.Id, transcribe.WavPath)); break;
-            case Deliver deliver: Track(DeliverAsync(deliver.Id, ct => DeliverToTargetAsync(deliver, ct))); break;
-            case CopyOnly copy: Track(DeliverAsync(copy.Id, ct => output.CopyOnlyAsync(copy.Text, ct))); break;
+            case Deliver deliver:
+                history.Record(deliver.Text);
+                Track(DeliverAsync(deliver.Id, ct => DeliverToTargetAsync(deliver, ct)));
+                break;
+            case CopyOnly copy:
+                history.Record(copy.Text);
+                Track(DeliverAsync(copy.Id, ct => output.CopyOnlyAsync(copy.Text, ct)));
+                break;
             case EmitMetrics emit:
                 MetricsLogger.Write(emit.Metrics);
                 lock (createdUtc) createdUtc.Remove(emit.Metrics.Id);

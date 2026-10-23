@@ -26,7 +26,7 @@ Somning goes from a headless, agent-verifiable dictation loop (hotkey, mic, loca
   4. Killing the engine worker or forcing GPU failure mid-run restarts it in CPU mode without crashing the app; a recording interrupted by a crash is recovered from its spool WAV on restart
   5. Pasting while the target window changed or is elevated leaves the text on the clipboard and logs a manual-paste outcome; every dictation logs capture, load, inference and paste timings with API keys redacted
 
-**Plans:** 9/13 plans executed
+**Plans:** 10/13 plans executed
 
 Plans (all execution and verification sequential):
 - [x] 01-01-PLAN.md - Worker/protocol tracer, published gate and model fetch (wave 1)
@@ -38,7 +38,7 @@ Plans (all execution and verification sequential):
 - [x] 01-07-PLAN.md - CPU restart/retry and queued readiness (wave 4)
 - [x] 01-08-PLAN.md - Isolated full benchmark and selected defaults (wave 5)
 - [x] 01-09-PLAN.md - Pure reducer, admission and complete metrics (wave 6)
-- [ ] 01-10-PLAN.md - App owner loop and ordered effects (wave 7)
+- [x] 01-10-PLAN.md - App owner loop and ordered effects (wave 7)
 - [ ] 01-11-PLAN.md - Startup recovery and replayable harness (wave 8)
 - [ ] 01-12-PLAN.md - Notepad/silence/crash and latency E2E (wave 9)
 - [ ] 01-13-PLAN.md - Focus/metrics, published App and final verifier (wave 10)
@@ -90,7 +90,7 @@ Plans (all execution and verification sequential):
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Dictation Loop MVP | 9/13 | In Progress|  |
+| 1. Dictation Loop MVP | 10/13 | In Progress|  |
 | 2. Overlay, Tray, Settings & Cancel | 0/TBD | Not started | - |
 | 3. Cloud Engine | 0/TBD | Not started | - |
 | 4. Packaging, Autostart & Hardening | 0/TBD | Not started | - |

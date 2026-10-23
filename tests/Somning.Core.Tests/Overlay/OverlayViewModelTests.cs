@@ -88,6 +88,10 @@ public sealed class OverlayViewModelTests
     [InlineData(OverlayNoticeKind.SilenceOnly, "Apenas silêncio detectado")]
     [InlineData(OverlayNoticeKind.NothingDetected, "Nenhuma fala detectada")]
     [InlineData(OverlayNoticeKind.ModelMissing, "Modelo de transcrição ausente")]
+    [InlineData(OverlayNoticeKind.CloudNoNetwork, "Sem conexão com a internet")]
+    [InlineData(OverlayNoticeKind.CloudInvalidKey, "Chave de API inválida")]
+    [InlineData(OverlayNoticeKind.CloudRateLimit, "Limite de requisições excedido")]
+    [InlineData(OverlayNoticeKind.CloudTimeout, "Tempo limite esgotado")]
     public void CreateNotice_maps_every_kind_to_the_required_pt_br_text(
         OverlayNoticeKind kind,
         string expected)
@@ -166,7 +170,11 @@ public sealed class OverlayViewModelTests
                 OverlayNoticeKind.MicBlocked,
                 OverlayNoticeKind.SilenceOnly,
                 OverlayNoticeKind.NothingDetected,
-                OverlayNoticeKind.ModelMissing
+                OverlayNoticeKind.ModelMissing,
+                OverlayNoticeKind.CloudNoNetwork,
+                OverlayNoticeKind.CloudInvalidKey,
+                OverlayNoticeKind.CloudRateLimit,
+                OverlayNoticeKind.CloudTimeout
             },
             Enum.GetValues<OverlayNoticeKind>());
     }

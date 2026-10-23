@@ -13,7 +13,8 @@ public enum RecordingStage
     PasteDeferred,
     Empty,
     Failed,
-    Recovered
+    Recovered,
+    Cancelled
 }
 
 public sealed class RecordingStageJsonConverter : JsonConverter<RecordingStage>
@@ -33,6 +34,7 @@ public sealed class RecordingStageJsonConverter : JsonConverter<RecordingStage>
             "empty" => RecordingStage.Empty,
             "failed" => RecordingStage.Failed,
             "recovered" => RecordingStage.Recovered,
+            "cancelled" => RecordingStage.Cancelled,
             _ => throw new JsonException("Unknown recording stage.")
         };
     }
@@ -49,6 +51,7 @@ public sealed class RecordingStageJsonConverter : JsonConverter<RecordingStage>
             RecordingStage.Empty => "empty",
             RecordingStage.Failed => "failed",
             RecordingStage.Recovered => "recovered",
+            RecordingStage.Cancelled => "cancelled",
             _ => throw new JsonException("Unknown recording stage.")
         });
     }

@@ -13,7 +13,8 @@ public enum CapturePhase
 }
 
 /// <summary>The one microphone capture that may be live at a time (separate from the processing FIFO).</summary>
-public sealed record CaptureSlot(string Id, CapturePhase Phase, bool StopRequested);
+/// <param name="Cancelled">Esc already discarded this capture; its CaptureStopped only releases the slot.</param>
+public sealed record CaptureSlot(string Id, CapturePhase Phase, bool StopRequested, bool Cancelled = false);
 
 /// <summary>A start that arrived while the previous capture was still stopping; executed on its CaptureStopped.</summary>
 public sealed record PendingStart(string Id, string Mode, long NowMs);

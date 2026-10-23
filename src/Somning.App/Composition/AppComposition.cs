@@ -47,6 +47,7 @@ public sealed class AppComposition : IAsyncDisposable
         // Live captures run normally while admission is pending; only transcription/copy dispatch waits (D-05, D-11).
         Host = new DictationHost(PhysicalKeyState.AreChordModifiersDown, idTaken: IdTaken,
             initialState: DictationState.Initial with { RecoveryAdmissionPending = true });
+        Hook.IsRecordingActive = () => Host.State.Capture is not null;
         Runner = new EffectRunner(e => Host.Post(e), Sidecars, SomningPaths.RecordingsDir, audioSourceFactory, probe, Engine, paster);
         Engine.RequestWritten += Runner.OnRequestWritten;
         Engine.StatusChanged += status => Host.Post(new EngineStatusChanged(status));

@@ -69,6 +69,7 @@ public sealed class EffectRunner : IAsyncDisposable
             case UpdateSidecar update: Persist(update.Sidecar); break;
             case StartCapture start: BeginCapture(start.Id); break;
             case StopCapture stop: EndCapture(stop.Id); break;
+            case DiscardCapture discard: Discard(discard.Id); break;
             case Transcribe transcribe: Track(TranscribeAsync(transcribe.Id, transcribe.WavPath)); break;
             case Deliver deliver: Track(DeliverAsync(deliver.Id, ct => DeliverToTargetAsync(deliver, ct))); break;
             case CopyOnly copy: Track(DeliverAsync(copy.Id, ct => output.CopyOnlyAsync(copy.Text, ct))); break;
@@ -163,6 +164,31 @@ public sealed class EffectRunner : IAsyncDisposable
         Track(StopAsync(session, target));
     }
 
+    /// <summary>HOTK-04: Esc cancellation stops capture and discards the spool file without delivery.</summary>
+    private void Discard(string id)
+    {
+        Notify("capture_discarded", id);
+        if (!sessions.TryGetValue(id, out var session)) return;
+        Track(DiscardAsync(session));
+    }
+
+    private async Task DiscardAsync(CaptureSession session)
+    {
+        if (!session.TryBeginEnd()) return;
+        if (!await StartSucceededAsync(session).ConfigureAwait(false)) return;
+        await StopAndReleaseAsync(session).ConfigureAwait(false);
+        try
+        {
+            if (File.Exists(session.WavPath))
+                File.Delete(session.WavPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Log.Warning(ex, "Could not delete discarded WAV {Path}", session.WavPath);
+        }
+        post(new CaptureStopped(session.Id, default(PasteTarget), 0, session.WavPath));
+    }
+
     /// <summary>
     /// Serialized per capture (H8): a stop issued while StartAsync is pending waits for it; a failed start already
     /// posted CaptureStartFailed, and a capture that already faulted already posted CaptureFaulted.
@@ -239,8 +265,8 @@ public sealed class EffectRunner : IAsyncDisposable
         post(new TranscriptionCompleted(id, result, Environment.TickCount64));
     }
 
+    // Harness-only delivery barrier (D-20): awaited asynchronously before TargetPaster; never in Release.
 #if SOMNING_TEST_HARNESS
-    /// <summary>Harness-only delivery barrier (D-20): awaited asynchronously before TargetPaster; never in Release.</summary>
     public Func<CancellationToken, Task>? BeforeDeliver { get; set; }
 
     private async Task<DeliveryResult> BarrierThenDeliverAsync(Func<CancellationToken, Task> barrier, Deliver deliver, CancellationToken ct)

@@ -11,6 +11,9 @@ public sealed record StartCapture(string Id, string Mode) : DictationEffect;
 /// <summary>The adapter captures the paste target FIRST, then stops the capture.</summary>
 public sealed record StopCapture(string Id) : DictationEffect;
 
+/// <summary>Esc cancellation: stop the capture, delete the spooled WAV and release the mic without transcribing.</summary>
+public sealed record DiscardCapture(string Id) : DictationEffect;
+
 /// <summary>Must be persisted before any later effect of the same batch runs.</summary>
 public sealed record UpdateSidecar(RecordingSidecar Sidecar) : DictationEffect;
 

@@ -105,6 +105,12 @@ public sealed class DictationHost : IAsyncDisposable
         switch (e)
         {
             case KeyReceived key:
+                if (key.Event.Kind == KeyEventKind.Cancel)
+                {
+                    interpreter.OnKey(key.Event);
+                    Reduce(new CancelRequested(key.Event.TimestampMs));
+                    break;
+                }
                 Fire(interpreter.OnKey(key.Event), key.Event.TimestampMs);
                 break;
             case Tick tick:

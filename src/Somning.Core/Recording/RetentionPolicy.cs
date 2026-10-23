@@ -9,7 +9,8 @@ public static class RetentionPolicy
         RecordingStage.PasteDeferred,
         RecordingStage.Empty,
         RecordingStage.Failed,
-        RecordingStage.Recovered
+        RecordingStage.Recovered,
+        RecordingStage.Cancelled
     ];
 
     public static IReadOnlyList<string> SelectForDeletion(IEnumerable<RecordingSidecar> sidecars, int keep = 20)

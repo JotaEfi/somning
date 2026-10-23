@@ -16,6 +16,9 @@ public sealed record CaptureStartFailed(string Id, string Reason) : DictationEve
 
 public sealed record CaptureStopped(string Id, PasteTarget Target, long CaptureMs, string WavPath) : DictationEvent;
 
+/// <summary>Esc while a capture is starting or recording: discard the audio, never transcribe or paste.</summary>
+public sealed record CancelRequested(long NowMs) : DictationEvent;
+
 public sealed record CaptureFaulted(string Id, string Code, string Message, long NowMs) : DictationEvent;
 
 public sealed record TranscriptionCompleted(string Id, EngineTranscription Result, long CompletedMs) : DictationEvent;

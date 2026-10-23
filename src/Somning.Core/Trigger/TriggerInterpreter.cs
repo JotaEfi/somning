@@ -89,6 +89,13 @@ public sealed class TriggerInterpreter
 
                 return new TriggerResult(TriggerCommand.None, Mode);
 
+            case KeyEventKind.Cancel:
+                IsRecording = false;
+                Mode = TriggerMode.Unknown;
+                isKeyDown = false;
+                modifiersUpSince = null;
+                return new TriggerResult(TriggerCommand.None, Mode);
+
             default:
                 return new TriggerResult(TriggerCommand.None, Mode);
         }

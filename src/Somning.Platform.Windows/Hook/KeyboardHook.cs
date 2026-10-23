@@ -5,7 +5,9 @@ using Somning.Platform.Windows.Input;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.UI.WindowsAndMessaging;
+
 namespace Somning.Platform.Windows.Hook;
+
 public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposable
 {
     private const uint LayoutRestoreMessage = 0x8000 + 0x31;
@@ -19,6 +21,10 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
     private nint layoutBeforeChord;
     private int disposed;
     private HOOKPROC? rootedCallback;
+
+    /// <summary>HOTK-04: Predicate returning whether dictation recording is actively in progress.</summary>
+    public Func<bool>? IsRecordingActive { get; set; }
+
     public void Start()
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
@@ -28,6 +34,7 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
         thread.Start();
         ready.Task.WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
     }
+
     private void Run()
     {
         try
@@ -47,6 +54,7 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
         catch (Exception ex) { ready.TrySetException(ex); }
         finally { sink.TryComplete(); }
     }
+
     private LRESULT OnKeyboard(int code, WPARAM wparam, LPARAM lparam)
     {
         if (code < 0) return PInvoke.CallNextHookEx((HHOOK)default, code, wparam, lparam);
@@ -69,6 +77,14 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
                 _ = PInvoke.PostThreadMessage(threadId, LayoutRestoreMessage, default, default);
             return new LRESULT(1);
         }
+
+        // HOTK-04: Pressing Esc (VK_ESCAPE = 0x1B) while recording cancels it immediately
+        if (down && data->vkCode == 0x1B && IsRecordingActive?.Invoke() == true)
+        {
+            sink.TryWrite(new KeyEvent(KeyEventKind.Cancel, Environment.TickCount64, data->dwExtraInfo == InputMarkers.Test));
+            return new LRESULT(1);
+        }
+
         return PInvoke.CallNextHookEx((HHOOK)default, code, wparam, lparam);
     }
 
@@ -101,6 +117,7 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint window, out uint processId);
     [DllImport("user32.dll")] private static extern nint GetKeyboardLayout(uint threadId);
     [DllImport("user32.dll", EntryPoint = "PostMessageW")] private static extern bool PostMessage(nint window, uint message, nint wParam, nint lParam);
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref disposed, 1) != 0) return;

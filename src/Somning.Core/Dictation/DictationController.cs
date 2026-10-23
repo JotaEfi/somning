@@ -13,6 +13,8 @@ namespace Somning.Core.Dictation;
 public static class DictationController
 {
     private const string ClipboardFailed = "clipboard_failed";
+    private const string CancelledOutcome = "cancelled";
+    private const string UserCancelEsc = "user_cancel_esc";
     private static readonly ImmutableArray<DictationEffect> None = ImmutableArray<DictationEffect>.Empty;
 
     public static (DictationState State, ImmutableArray<DictationEffect> Effects) Reduce(DictationState state, DictationEvent e)
@@ -25,6 +27,7 @@ public static class DictationController
             CaptureStarted started => OnCaptureStarted(state, started),
             CaptureStartFailed failed => OnCaptureStartFailed(state, failed),
             CaptureStopped stopped => OnCaptureStopped(state, stopped),
+            CancelRequested cancel => OnCancelRequested(state, cancel),
             CaptureFaulted faulted => OnCaptureFaulted(state, faulted),
             TranscriptionCompleted completed => OnTranscription(state, completed),
             DeliveryCompleted delivered => OnDelivery(state, delivered),
@@ -86,6 +89,48 @@ public static class DictationController
         return state with { Records = records };
     }
 
+    // ---- Cancellation -------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Esc is only valid while Starting or Recording. The sidecar becomes terminal immediately (durable by the
+    /// adapter before DiscardCapture runs) and the capture slot stays busy until CaptureStopped releases it, so
+    /// the next pending start never overlaps the discarded microphone (HOTK-04).
+    /// </summary>
+    private static (DictationState, ImmutableArray<DictationEffect>) OnCancelRequested(DictationState state, CancelRequested cancel)
+    {
+        if (state.Capture is not { Phase: CapturePhase.Starting or CapturePhase.Recording } slot ||
+            !state.Records.TryGetValue(slot.Id, out var record))
+            return (state, None);
+
+        var cancelled = record with
+        {
+            StopMs = cancel.NowMs,
+            StopReason = UserCancelEsc,
+            Stage = RecordingStage.Cancelled
+        };
+        var next = state with
+        {
+            Records = state.Records.SetItem(slot.Id, cancelled),
+            Capture = slot with { Phase = CapturePhase.Stopping, StopRequested = true, Cancelled = true }
+        };
+        return (next,
+        [
+            new UpdateSidecar(cancelled.ToSidecar(RecordingStage.Cancelled, CancelledOutcome, UserCancelEsc)),
+            new DiscardCapture(slot.Id)
+        ]);
+    }
+
+    /// <summary>Removes a cancelled record and frees the slot without queueing or dispatching anything.</summary>
+    private static (DictationState, ImmutableArray<DictationEffect>) ReleaseCancelled(DictationState state, string id)
+    {
+        var cleaned = state with
+        {
+            Records = state.Records.Remove(id),
+            InFlight = state.InFlight == id ? null : state.InFlight
+        };
+        return ReleaseSlot(cleaned, None);
+    }
+
     // ---- Capture lifecycle --------------------------------------------------------------------------------
 
     /// <summary>Puts the id into the (empty) capture slot; a stop already recorded for it is remembered.</summary>
@@ -118,6 +163,7 @@ public static class DictationController
     private static (DictationState, ImmutableArray<DictationEffect>) OnCaptureStopped(DictationState state, CaptureStopped stopped)
     {
         if (state.Capture is not { } slot || slot.Id != stopped.Id) return (state, None);
+        if (slot.Cancelled) return ReleaseCancelled(state, stopped.Id);
         var records = Update(state, stopped.Id, record => record with
         {
             WavPath = stopped.WavPath,
@@ -133,6 +179,7 @@ public static class DictationController
     {
         if (state.Capture is not { } slot || slot.Id != failed.Id || !state.Records.TryGetValue(failed.Id, out var record))
             return (state, None);
+        if (slot.Cancelled) return ReleaseCancelled(state, failed.Id);
         var (released, effects) = ReleaseSlot(state, None);
         var sidecar = record.ToSidecar(RecordingStage.Failed, "error", failed.Reason, failed.Reason);
         var metrics = BuildMetrics(record, "error", "capture_start_failed:" + failed.Reason, 0, record.StopMs ?? 0);
@@ -144,6 +191,7 @@ public static class DictationController
     {
         if (state.Capture is not { } slot || slot.Id != faulted.Id || !state.Records.TryGetValue(faulted.Id, out var record))
             return (state, None);
+        if (slot.Cancelled) return ReleaseCancelled(state, faulted.Id);
         var stopped = record with { StopMs = record.StopMs ?? faulted.NowMs };
         var (released, effects) = ReleaseSlot(state, None);
         var sidecar = stopped.ToSidecar(RecordingStage.Captured, "error", faulted.Code, faulted.Code);

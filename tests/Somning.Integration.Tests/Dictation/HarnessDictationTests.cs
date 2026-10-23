@@ -32,6 +32,8 @@ public sealed partial class HarnessDictationTests
 
         HotkeyInjector.Chord(80); // tap → start (toggle)
         await Task.Delay(fixtureLength + TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+        Requires.That(ForegroundHelper.EnsureForeground(notepad.Window, notepad.Edit),
+            "Notepad could not be restored to the foreground before the stop hotkey.");
         HotkeyInjector.Chord(80); // tap → stop
 
         var text = "";

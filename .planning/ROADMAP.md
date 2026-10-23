@@ -56,7 +56,13 @@ Plans (all execution and verification sequential):
   4. Settings (hotkey with conflict warning, mic applied without restart, auto-paste off giving clipboard-only, sounds, vocabulary prompt, tap threshold) round-trip across restarts, survive corrupted files, and the API key is stored DPAPI-encrypted; a second instance exits immediately
   5. First run with no model downloads it with progress, resume and SHA-256 verification against a local test server, reporting retryable failures
 
-**Plans**: TBD
+**Plans**: 6 plans
+- [x] 02-01-PLAN.md - Single instance mutex, persisted settings with DPAPI, and corruption recovery (wave 1)
+- [x] 02-02-PLAN.md - Esc cancellation and hotkey conflict validator (wave 2)
+- [x] 02-03-PLAN.md - System tray menu with pt-BR actions and last transcript repaste (wave 3)
+- [x] 02-04-PLAN.md - Overlay pill window with live waveform and non-intrusive styles (wave 4)
+- [x] 02-05-PLAN.md - Settings dialog, dynamic audio device switching and sound cues (wave 5)
+- [x] 02-06-PLAN.md - First-run model downloader with resume and SHA-256 verification (wave 6)
 **UI hint**: yes
 
 ### Phase 3: Cloud Engine
@@ -91,6 +97,6 @@ Plans (all execution and verification sequential):
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Dictation Loop MVP | 13/13 | Complete | 2026-10-23 |
-| 2. Overlay, Tray, Settings & Cancel | 0/TBD | Not started | - |
+| 2. Overlay, Tray, Settings & Cancel | 6/6 | Complete | 2026-10-23 |
 | 3. Cloud Engine | 0/TBD | Not started | - |
 | 4. Packaging, Autostart & Hardening | 0/TBD | Not started | - |

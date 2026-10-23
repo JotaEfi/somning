@@ -6,6 +6,7 @@ using Somning.App.Engine;
 using Somning.App.Recovery;
 using Somning.Core.Dictation;
 using Somning.Core.Engine;
+using Somning.Core.Model;
 using Somning.Core.Output;
 using Somning.Core.Overlay;
 using Somning.Core.Paths;
@@ -214,10 +215,41 @@ public sealed class AppComposition : IAsyncDisposable
         return recovery;
     }
 
+    public ModelDownloadManager ModelDownloader { get; } = new();
+
+    public async Task EnsureModelAvailableAsync(CancellationToken cancellationToken = default)
+    {
+        var modelPath = Path.Combine(SomningPaths.ModelsDir, EngineDefaults.ModelFile);
+        if (File.Exists(modelPath)) return;
+
+        var downloadUrl = Environment.GetEnvironmentVariable("SOMNING_MODEL_DOWNLOAD_URL");
+        var sha256 = Environment.GetEnvironmentVariable("SOMNING_MODEL_SHA256");
+
+        if (string.IsNullOrEmpty(downloadUrl) || string.IsNullOrEmpty(sha256)) return;
+
+        try
+        {
+            Overlay?.ShowNotice(OverlayNoticeKind.ModelMissing);
+            var progress = new Progress<ModelDownloadProgress>(p =>
+            {
+                Log.Debug("Model download progress: {Percent:F1}%", p.Percent);
+            });
+
+            await ModelDownloader.DownloadAsync(new Uri(downloadUrl), modelPath, sha256, progress, cancellationToken)
+                .ConfigureAwait(false);
+            Overlay?.Hide();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Automatic model download failed");
+        }
+    }
+
     private async Task RunEngineStartAsync()
     {
         try
         {
+            await EnsureModelAvailableAsync(lifetime.Token).ConfigureAwait(false);
             await Engine.StartAsync(EngineDefaults.Backend, lifetime.Token).ConfigureAwait(false);
             if (Engine.Status == EngineStatus.Ready && Engine.Session is { } session)
             {

@@ -7,3 +7,5 @@ TestResults/
 models/
 .venv/
 *.user
+.gsd/
+.planning/milestone.lock

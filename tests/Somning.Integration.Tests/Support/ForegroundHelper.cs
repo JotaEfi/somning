@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Windows.Win32;
 using Windows.Win32.Foundation;
+using Windows.Win32.UI.WindowsAndMessaging;
 using PInvoke = Windows.Win32.IntegrationPInvoke;
 
 namespace Somning.Integration.Tests.Support;
@@ -24,6 +25,24 @@ public static class ForegroundHelper
             if (DateTime.UtcNow > until) return false;
             Thread.Sleep(50);
         }
+    }
+
+    /// <summary>Waits until Win32 reports the requested edit as the active focused control.</summary>
+    public static unsafe bool EnsureForegroundFocus(nint window, nint editWindow)
+    {
+        var until = DateTime.UtcNow + TimeSpan.FromSeconds(2);
+        do
+        {
+            if (TryEnsureForeground(window, editWindow))
+            {
+                var thread = PInvoke.GetWindowThreadProcessId(new HWND(window), out _);
+                var info = new GUITHREADINFO { cbSize = (uint)Marshal.SizeOf<GUITHREADINFO>() };
+                if (thread != 0 && PInvoke.GetGUIThreadInfo(thread, ref info) && (nint)info.hwndFocus.Value == editWindow)
+                    return true;
+            }
+            Thread.Sleep(25);
+        } while (DateTime.UtcNow < until);
+        return false;
     }
 
     private static bool TryEnsureForeground(nint window, nint editWindow)

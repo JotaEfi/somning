@@ -28,12 +28,13 @@ public sealed partial class HarnessDictationTests
 
         using var app = await AppHarnessDriver.StartAsync(fixture, waitForEngine: true);
         using var notepad = NotepadDriver.Start();
-        Requires.That(ForegroundHelper.EnsureForeground(notepad.Window, notepad.Edit), "Notepad could not be brought to the foreground.");
+        Requires.That(ForegroundHelper.EnsureForegroundFocus(notepad.Window, notepad.Edit),
+            "Notepad edit control did not become the active foreground focus.");
 
         HotkeyInjector.Chord(80); // tap → start (toggle)
         await Task.Delay(fixtureLength + TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
-        Requires.That(ForegroundHelper.EnsureForeground(notepad.Window, notepad.Edit),
-            "Notepad could not be restored to the foreground before the stop hotkey.");
+        Requires.That(ForegroundHelper.EnsureForegroundFocus(notepad.Window, notepad.Edit),
+            "Notepad edit control did not retain focus before the stop hotkey.");
         HotkeyInjector.Chord(80); // tap → stop
 
         var text = "";

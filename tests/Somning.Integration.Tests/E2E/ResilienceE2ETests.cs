@@ -16,9 +16,10 @@ public sealed class ResilienceE2ETests
         try
         {
             var cursor = await e2e.App.LastSeqAsync();
-            Assert.True(ForegroundHelper.EnsureForeground(e2e.Notepad.Window, e2e.Notepad.Edit));
+            Assert.True(ForegroundHelper.EnsureForegroundFocus(e2e.Notepad.Window, e2e.Notepad.Edit));
             HotkeyInjector.Chord(70);
             await Task.Delay(E2EFixtureSupport.Duration(fixture) + TimeSpan.FromMilliseconds(800), TestContext.Current.CancellationToken);
+            Assert.True(ForegroundHelper.EnsureForegroundFocus(e2e.Notepad.Window, e2e.Notepad.Edit));
             HotkeyInjector.Chord(70);
             var captured = await e2e.App.WaitEventAsync("target_captured", cursor, null, TimeSpan.FromSeconds(15));
             var started = await e2e.App.WaitEventAsync("transcribe_started", captured.Seq - 1, captured.Id, TimeSpan.FromSeconds(20));
@@ -62,19 +63,19 @@ public sealed class ResilienceE2ETests
         try
         {
             E2EFixtureSupport.SetClipboard("RECOVERY-SENTINEL");
-            Assert.True(ForegroundHelper.EnsureForeground(notepad.Window, notepad.Edit));
+            Assert.True(ForegroundHelper.EnsureForegroundFocus(notepad.Window, notepad.Edit));
             var app = await AppHarnessDriver.StartAsync(fixture, waitForEngine: true, dataDir: dataDir);
             try
             {
                 await app.WaitEventAsync("recovery_complete", 0, null, TimeSpan.FromSeconds(30));
                 var cursor = await app.LastSeqAsync();
-                Assert.True(ForegroundHelper.EnsureForeground(notepad.Window, notepad.Edit));
+                Assert.True(ForegroundHelper.EnsureForegroundFocus(notepad.Window, notepad.Edit));
                 if (completeCapture) await app.ArmDeliveryBarrierAsync();
                 HotkeyInjector.Chord(70);
                 if (completeCapture)
                 {
                     await Task.Delay(E2EFixtureSupport.Duration(fixture) + TimeSpan.FromMilliseconds(800), TestContext.Current.CancellationToken);
-                    Assert.True(ForegroundHelper.EnsureForeground(notepad.Window, notepad.Edit)); HotkeyInjector.Chord(70);
+                    Assert.True(ForegroundHelper.EnsureForegroundFocus(notepad.Window, notepad.Edit)); HotkeyInjector.Chord(70);
                     var captured = await app.WaitEventAsync("target_captured", cursor, null, TimeSpan.FromSeconds(20));
                     await app.WaitEventAsync("transcribe_started", captured.Seq - 1, captured.Id, TimeSpan.FromSeconds(20));
                     await WaitForSavedText(Path.Combine(app.RecordingsDir, captured.Id + ".json"), TimeSpan.FromSeconds(30));

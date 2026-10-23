@@ -10,3 +10,7 @@
   only one waiter). Reproduced identically on base commit `cdfdd38` (before any 01-09 change), so not caused
   by 01-09. Fix: keep the pending timer task across iterations and only re-arm it after it completes.
   Plan 01-10's DictationHost must not copy this pattern for its own 50 ms Tick task.
+
+  **Resolved after 01-09** (`fix(01-09)` commit): `HookTriggerLoop` now keeps both pending waits (timer tick and
+  channel read) across iterations and re-arms each only after it completes. The abandoned `ReadAsync` could also
+  swallow a key event, so both were fixed. Integration suite: 67/67 green.

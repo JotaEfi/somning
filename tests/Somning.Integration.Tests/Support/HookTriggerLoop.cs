@@ -26,13 +26,17 @@ public sealed class HookTriggerLoop : IAsyncDisposable
         using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(50));
         var token = cts.Token;
 
+        // Each pending wait is kept until it completes: PeriodicTimer allows only one
+        // outstanding waiter, and an abandoned ReadAsync would swallow a key event.
+        Task<KeyEvent>? readTask = null;
+        Task<bool>? timerTask = null;
+
         try
         {
             while (!token.IsCancellationRequested)
             {
-                // Wait for either the next key event or the 50 ms tick
-                var readTask = reader.ReadAsync(token).AsTask();
-                var timerTask = timer.WaitForNextTickAsync(token).AsTask();
+                readTask ??= reader.ReadAsync(token).AsTask();
+                timerTask ??= timer.WaitForNextTickAsync(token).AsTask();
 
                 var completed = await Task.WhenAny(readTask, timerTask);
 
@@ -40,22 +44,23 @@ public sealed class HookTriggerLoop : IAsyncDisposable
 
                 if (completed == readTask)
                 {
-                    if (readTask.IsCompletedSuccessfully)
-                    {
-                        var keyEvent = readTask.Result;
-                        var result = interpreter.OnKey(keyEvent);
-                        if (result.Command != TriggerCommand.None)
-                        {
-                            Results.Enqueue((now, result));
-                        }
-                    }
-                    else
+                    if (!readTask.IsCompletedSuccessfully)
                     {
                         break;
+                    }
+
+                    var keyEvent = await readTask;
+                    readTask = null;
+                    var result = interpreter.OnKey(keyEvent);
+                    if (result.Command != TriggerCommand.None)
+                    {
+                        Results.Enqueue((now, result));
                     }
                 }
                 else
                 {
+                    await timerTask;
+                    timerTask = null;
                     bool modifiersDown = PhysicalKeyState.AreChordModifiersDown();
                     var result = interpreter.OnTick(now, modifiersDown);
                     if (result.Command != TriggerCommand.None)

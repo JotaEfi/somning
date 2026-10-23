@@ -33,6 +33,8 @@ public sealed class EngineSupervisor(string? enginePath = null, SupervisorOption
     public event Action<EngineStatus>? StatusChanged;
     public event Action<string>? RequestWritten;
     public string? ActiveBackend => session?.Backend;
+    /// <summary>Current worker session (backend, model, load/warm timings); null until ready.</summary>
+    public EngineSessionInfo? Session => session;
     public int RestartCount => Volatile.Read(ref restartCount);
     internal Process? ActiveProcess => worker?.Process;
     internal Task InferenceStarted => worker?.InferenceStarted ?? Task.CompletedTask;

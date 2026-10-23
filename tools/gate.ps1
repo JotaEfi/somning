@@ -1,4 +1,7 @@
-param([string]$ModelsDir = (Join-Path $env:LOCALAPPDATA 'Somning\models'))
+param(
+    [string]$ModelsDir = (Join-Path $env:LOCALAPPDATA 'Somning\models'),
+    [switch]$App
+)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $culture = [Globalization.CultureInfo]::InvariantCulture
@@ -6,6 +9,7 @@ $utf8 = New-Object Text.UTF8Encoding($false)
 $root = Split-Path $PSScriptRoot -Parent
 $report = Join-Path $root '.planning\phases\01-dictation-loop-mvp\GATE-RESULT.md'
 $rows = New-Object 'Collections.Generic.List[string]'
+$appSection = @()
 $failed = $false
 function Format-Number($Value) { return ([double]$Value).ToString('F2', $culture) }
 function Read-Message($Reader, [int]$Seconds) {
@@ -104,6 +108,89 @@ try {
             }
         }
     }
+    if ($App) {
+        $appRows = New-Object 'Collections.Generic.List[string]'
+        $appPublish = Join-Path $root 'publish\app'
+        try {
+            & dotnet publish src/Somning.App -c Release -r win-x64 --self-contained -o $appPublish
+            if ($LASTEXITCODE -ne 0) { throw "App publish failed ($LASTEXITCODE)" }
+            $appEngine = Join-Path $appPublish 'engine'
+            New-Item -ItemType Directory -Path $appEngine -Force | Out-Null
+            Copy-Item -Path (Join-Path $root 'publish\engine\*') -Destination $appEngine -Recurse -Force
+
+            # Exercise the exact EngineLocator layout from a fresh installed-style path with spaces and Unicode.
+            $install = Join-Path $env:TEMP ('Somning ' + [char]0x03A9 + ' install ' + [guid]::NewGuid().ToString('N'))
+            $installedApp = Join-Path $install 'app'
+            $installedData = Join-Path $install 'user data'
+            $recordings = Join-Path $installedData 'recordings'
+            New-Item -ItemType Directory -Path $installedApp,$recordings -Force | Out-Null
+            Copy-Item -Path (Join-Path $appPublish '*') -Destination $installedApp -Recurse -Force
+            $fixture = Join-Path $recordings 'hoje.wav'
+            Copy-Item -LiteralPath (Join-Path $root 'tests\fixtures\tracer\hoje.wav') -Destination $fixture
+            $appExe = Join-Path $installedApp 'Somning.App.exe'
+            if (-not (Test-Path -LiteralPath $appExe)) { throw 'Published App executable is missing' }
+
+            $info = New-Object Diagnostics.ProcessStartInfo
+            $info.FileName = $appExe
+            $info.WorkingDirectory = $install
+            $info.UseShellExecute = $false
+            $info.CreateNoWindow = $true
+            $info.RedirectStandardOutput = $true
+            $info.RedirectStandardError = $true
+            $info.Arguments = '--transcribe-file ' + (Quote-Argument $fixture) + ' --backend vulkan'
+            $info.EnvironmentVariables['PATH'] = 'C:\Windows\system32;C:\Windows'
+            $info.EnvironmentVariables['DOTNET_ROOT'] = Join-Path $install 'no-sdk'
+            $info.EnvironmentVariables['DOTNET_ROOT_X64'] = Join-Path $install 'no-sdk'
+            $info.EnvironmentVariables['DOTNET_MULTILEVEL_LOOKUP'] = '0'
+            $info.EnvironmentVariables['SOMNING_MODELS_DIR'] = $ModelsDir
+            $info.EnvironmentVariables['SOMNING_DATA_DIR'] = $installedData
+            foreach ($name in @('DOTNET_STARTUP_HOOKS','DOTNET_ADDITIONAL_DEPS','DOTNET_SHARED_STORE','VULKAN_SDK','VK_LAYER_PATH','SOMNING_ENGINE_PATH','SOMNING_ENGINE_FAULT')) {
+                $info.EnvironmentVariables.Remove($name)
+            }
+            $p = New-Object Diagnostics.Process; $p.StartInfo = $info
+            if (-not $p.Start()) { throw 'Published App failed to start' }
+            $stdout = $p.StandardOutput.ReadToEndAsync()
+            $stderr = $p.StandardError.ReadToEndAsync()
+            if (-not $p.WaitForExit(300000)) { $p.Kill(); $p.WaitForExit(); throw 'Published App transcription timed out' }
+            if ($p.ExitCode -ne 0) { throw "Published App exited $($p.ExitCode): $($stderr.Result) $($stdout.Result)" }
+            Add-Type -AssemblyName System.Windows.Forms
+            $actual = [Windows.Forms.Clipboard]::GetText()
+            $expectedApp = [IO.File]::ReadAllText((Join-Path $root 'tests\fixtures\tracer\hoje.txt'), $utf8)
+            $appWer = Get-Wer $expectedApp $actual
+            if ($appWer -gt 0.10) { throw "Published App clipboard WER too high: $appWer" }
+            $workerPath = Join-Path $installedApp 'engine\Somning.Engine.exe'
+            if (-not (Test-Path -LiteralPath $workerPath)) { throw 'EngineLocator installed worker path is missing' }
+
+            # Release must reject harness launch and must not carry the harness/fault implementation types.
+            $reject = New-Object Diagnostics.ProcessStartInfo
+            $reject.FileName = $appExe; $reject.WorkingDirectory = $install; $reject.UseShellExecute = $false
+            $reject.CreateNoWindow = $true; $reject.RedirectStandardError = $true
+            $reject.Arguments = '--test-harness --fixture ' + (Quote-Argument $fixture)
+            $reject.EnvironmentVariables['PATH'] = 'C:\Windows\system32;C:\Windows'
+            $reject.EnvironmentVariables['DOTNET_ROOT'] = Join-Path $install 'no-sdk'
+            $reject.EnvironmentVariables['DOTNET_MULTILEVEL_LOOKUP'] = '0'
+            $rp = New-Object Diagnostics.Process; $rp.StartInfo = $reject
+            if (-not $rp.Start()) { throw 'Release harness rejection process failed to start' }
+            $rejectError = $rp.StandardError.ReadToEndAsync()
+            if (-not $rp.WaitForExit(15000)) { $rp.Kill(); $rp.WaitForExit(); throw 'Release harness rejection did not exit' }
+            if ($rp.ExitCode -ne 2) { throw "Release --test-harness exit was $($rp.ExitCode), expected 2: $($rejectError.Result)" }
+            foreach ($assembly in @((Join-Path $installedApp 'Somning.App.dll'), (Join-Path $installedApp 'engine\Somning.Engine.dll'))) {
+                $bytes = [IO.File]::ReadAllBytes($assembly)
+                $ascii = [Text.Encoding]::ASCII.GetString($bytes)
+                foreach ($forbidden in @('HarnessPipeServer','HarnessOptions','FaultInjection')) {
+                    if ($ascii.Contains($forbidden)) { throw "Release assembly contains forbidden type marker $forbidden ($assembly)" }
+                }
+            }
+            $appRows.Add("| installed App + Engine | $([Math]::Round($appWer*100,2))% | PASS | sanitized PATH, self-contained win-x64, non-ASCII/space path, worker resolved at app\engine |")
+            $appRows.Add('| Release harness | - | PASS | exit 2; harness/fault type markers absent |')
+            Write-Host 'GATE PASS published App'
+            $rp.Dispose(); $p.Dispose()
+        } catch {
+            $failed = $true
+            $appRows.Add("| published App | - | FAIL | $($_.Exception.Message.Replace('|','/')) |")
+        }
+        $appSection = @('', '## Published App layout', '', '| check | WER | status | evidence |', '|---|---:|---|---|') + @($appRows.ToArray())
+    }
 } catch { $failed = $true; $rows.Add("| build | - | - | - | - | FAIL | $($_.Exception.Message.Replace('|','/')) |") }
 $lines = @('# Windows 10 published engine gate', '',
     ('Date: ' + [DateTime]::UtcNow.ToString('o', $culture)),
@@ -114,6 +201,7 @@ $lines = @('# Windows 10 published engine gate', '',
     'Deployment prerequisites: natives import MSVCP140, VCRUNTIME140, VCRUNTIME140_1, VCOMP140 and vulkan-1.dll from System32. Phase 4 must ship the VC++ redistributable; the installed GPU driver supplies Vulkan.',
     'The transcript is an explicit regression fixture, retained here as gate evidence; operational logs exclude transcript text.')
 if ($failed) { $lines += ''; $lines += 'D-16 re-check failed: execution stops; insert a native-rebuild phase' }
+if ($App) { $lines += $appSection }
 [IO.File]::WriteAllLines($report, [string[]]$lines, $utf8)
 if ($failed) { Write-Host 'GATE FAIL'; exit 1 }
 exit 0

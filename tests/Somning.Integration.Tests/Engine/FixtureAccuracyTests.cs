@@ -5,33 +5,36 @@ using Xunit;
 
 namespace Somning.Integration.Tests.Engine;
 
-[Collection("EngineIntegration")]
-public sealed class FixtureAccuracyTests : IAsyncLifetime
+public sealed class FixtureAccuracyFixture : IAsyncLifetime
 {
-    private readonly string allowed = Path.Combine(Path.GetTempPath(), "somning-accuracy", Guid.NewGuid().ToString("N"));
-    private EngineWorkerClient client = null!;
+    public string Allowed { get; } = Path.Combine(Path.GetTempPath(), "somning-accuracy", Guid.NewGuid().ToString("N"));
+    public EngineWorkerClient Client { get; private set; } = null!;
 
     public async ValueTask InitializeAsync()
     {
         Requires.Models();
-        Directory.CreateDirectory(allowed);
+        Directory.CreateDirectory(Allowed);
         foreach (var fixture in FixtureManifest.Load())
-            File.Copy(Path.Combine(RepoPaths.Fixtures, fixture.File), Path.Combine(allowed, Path.GetFileName(fixture.File)));
-        client = new EngineWorkerClient(allowed);
-        await client.ReadyAsync();
+            File.Copy(Path.Combine(RepoPaths.Fixtures, fixture.File), Path.Combine(Allowed, Path.GetFileName(fixture.File)));
+        Client = new EngineWorkerClient(Allowed);
+        await Client.ReadyAsync();
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (client is not null)
+        if (Client is not null)
         {
-            await client.SendAsync(new ShutdownRequest());
-            await client.WaitForExitAsync(TimeSpan.FromSeconds(10));
-            client.Dispose();
+            await Client.SendAsync(new ShutdownRequest());
+            await Client.WaitForExitAsync(TimeSpan.FromSeconds(10));
+            Client.Dispose();
         }
-        if (Directory.Exists(allowed)) Directory.Delete(allowed, true);
+        if (Directory.Exists(Allowed)) Directory.Delete(Allowed, true);
     }
+}
 
+[Collection("EngineIntegration")]
+public sealed class FixtureAccuracyTests(FixtureAccuracyFixture fixture) : IClassFixture<FixtureAccuracyFixture>
+{
     [Fact]
     public async Task Clean_fixtures_meet_quality_target()
     {
@@ -65,8 +68,8 @@ public sealed class FixtureAccuracyTests : IAsyncLifetime
 
     private async Task<ResultMessage> Transcribe(FixtureEntry entry)
     {
-        await client.SendAsync(new TranscribeRequest(Guid.NewGuid().ToString("N"), Path.Combine(allowed, Path.GetFileName(entry.File))));
-        var result = Assert.IsType<ResultMessage>(await client.ReadMessageAsync(TimeSpan.FromSeconds(120)));
+        await fixture.Client.SendAsync(new TranscribeRequest(Guid.NewGuid().ToString("N"), Path.Combine(fixture.Allowed, Path.GetFileName(entry.File))));
+        var result = Assert.IsType<ResultMessage>(await fixture.Client.ReadMessageAsync(TimeSpan.FromSeconds(120)));
         Assert.Equal("text", result.Outcome);
         return result;
     }

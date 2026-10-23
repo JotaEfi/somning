@@ -45,5 +45,10 @@ public sealed class WhisperHost : IDisposable
         }
         return (text.ToString().Trim(), noSpeech, segments);
     }
-    public void Dispose() { processor.Dispose(); SpeechGate.Dispose(); factory.Dispose(); }
+    public void Dispose()
+    {
+        try { processor.Dispose(); } catch { }
+        SpeechGate.Dispose();
+        factory.Dispose();
+    }
 }

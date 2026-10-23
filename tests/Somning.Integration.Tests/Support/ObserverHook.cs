@@ -3,6 +3,7 @@ using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.UI.WindowsAndMessaging;
 using Somning.Platform.Windows.Input;
+using PInvoke = Windows.Win32.IntegrationPInvoke;
 namespace Somning.Integration.Tests.Support;
 public sealed unsafe class ObserverHook : IDisposable
 {

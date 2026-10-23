@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Windows.Win32;
 using Windows.Win32.Foundation;
+using PInvoke = Windows.Win32.IntegrationPInvoke;
 
 namespace Somning.Integration.Tests.Support;
 

@@ -2,6 +2,7 @@ using Somning.Platform.Windows.Input;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.UI.Input.KeyboardAndMouse;
+using PInvoke = Windows.Win32.IntegrationPInvoke;
 namespace Somning.Integration.Tests.Support;
 public static class HotkeyInjector
 {

@@ -26,7 +26,8 @@ if (singleInstance is { IsFirstInstance: false })
     return 0;
 }
 
-Func<IAudioSource> audioSourceFactory = () => new WasapiAudioSource();
+var dynamicAudio = new DynamicAudioSourceFactory();
+Func<IAudioSource> audioSourceFactory = dynamicAudio.CreateAudioSource;
 Action<AppComposition, Action>? configure = null;
 #if SOMNING_TEST_HARNESS
 if (HarnessOptions.IsRequested(args))
@@ -64,11 +65,11 @@ if (args.Length > 0)
 }
 #endif
 
-return await RunDictationAsync(audioSourceFactory, configure);
+return await RunDictationAsync(audioSourceFactory, configure, dynamicAudio);
 
 // Startup order (review H9): logging → recording snapshot + harness pipe (Debug) → loop + tick → keyboard hook →
 // recovery and engine start in the background (neither awaited).
-static async Task<int> RunDictationAsync(Func<IAudioSource> audioSourceFactory, Action<AppComposition, Action>? configure)
+static async Task<int> RunDictationAsync(Func<IAudioSource> audioSourceFactory, Action<AppComposition, Action>? configure, DynamicAudioSourceFactory? dynamicAudio = null)
 {
     LoggingSetup.Initialize();
     using var shutdown = new CancellationTokenSource();
@@ -76,7 +77,7 @@ static async Task<int> RunDictationAsync(Func<IAudioSource> audioSourceFactory, 
     AppDomain.CurrentDomain.ProcessExit += (_, _) => { try { shutdown.Cancel(); } catch (ObjectDisposedException) { } };
     try
     {
-        await using var app = new AppComposition(audioSourceFactory);
+        await using var app = new AppComposition(audioSourceFactory, dynamicAudio: dynamicAudio);
         configure?.Invoke(app, () => { try { shutdown.Cancel(); } catch (ObjectDisposedException) { } });
         if (configure is null)
         {

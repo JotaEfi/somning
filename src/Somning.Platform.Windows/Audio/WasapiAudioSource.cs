@@ -19,13 +19,58 @@ public sealed class WasapiAudioSource : IAudioSource
     private BufferedWaveProvider? inputBuffer;
     private IWaveProvider? converter;
     private IPcmSink? sink;
+    private MMDevice? selectedDevice;
     private Task? stopTask;
     private int faultRaised;
     private bool started;
     private bool disposed;
 
+    /// <summary>
+    /// <paramref name="deviceId"/> selects a capture endpoint for this source; <c>null</c>, blank or a device that
+    /// disappeared falls back to the Windows default (AUD-02).
+    /// </summary>
+    public WasapiAudioSource(string? deviceId = null) =>
+        DeviceId = string.IsNullOrWhiteSpace(deviceId) ? null : deviceId.Trim();
+
+    /// <summary>Normalized endpoint id, or <c>null</c> when this source uses the default device.</summary>
+    public string? DeviceId { get; }
+
+
     public event Action<float>? Level;
     public event Action<AudioFault>? Faulted;
+
+    /// <summary>
+    /// Builds the recorder for the selected endpoint. A stale/removed device id must never break dictation, so any
+    /// failure while opening it retries once with the Windows default device.
+    /// </summary>
+    private WasapiRecorder BuildRecorder()
+    {
+        if (DeviceId is not { } id)
+            return CreateBuilder().Build();
+
+        try
+        {
+            using var enumerator = new MMDeviceEnumerator();
+            var device = enumerator.GetDevice(id);
+            try
+            {
+                var activeRecorder = CreateBuilder().WithDevice(device).Build();
+                selectedDevice = device;
+                return activeRecorder;
+            }
+            catch
+            {
+                device.Dispose();
+                throw;
+            }
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            return CreateBuilder().Build();
+        }
+    }
+
+    private static WasapiRecorderBuilder CreateBuilder() => new WasapiRecorderBuilder().WithBufferLength(30);
 
     public async Task<AudioStartInfo> StartAsync(IPcmSink destination, CancellationToken cancellationToken)
     {
@@ -43,7 +88,7 @@ public sealed class WasapiAudioSource : IAudioSource
         WasapiRecorder activeRecorder;
         try
         {
-            activeRecorder = new WasapiRecorderBuilder().WithBufferLength(30).Build();
+            activeRecorder = BuildRecorder();
         }
         catch (Exception exception)
         {
@@ -306,7 +351,15 @@ public sealed class WasapiAudioSource : IAudioSource
             if (disposed) return;
             disposed = true;
         }
-        await StopAsync().ConfigureAwait(false);
+        try
+        {
+            await StopAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            selectedDevice?.Dispose();
+            selectedDevice = null;
+        }
     }
 }
 

@@ -31,6 +31,8 @@ public sealed class EffectRunner : IAsyncDisposable
     private readonly ITranscriptHistory history;
     private readonly Func<IOverlayView?>? getOverlay;
     private readonly AudioLevelTracker? audioTracker;
+    private readonly Func<bool>? getAutoPaste;
+    private readonly ISoundCuePlayer? soundPlayer;
     private readonly ConcurrentDictionary<string, CaptureSession> sessions = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, string> transcribing = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTimeOffset> createdUtc = new(StringComparer.Ordinal);
@@ -39,7 +41,8 @@ public sealed class EffectRunner : IAsyncDisposable
 
     public EffectRunner(Action<DictationEvent> post, SidecarStore sidecars, string recordingsDir,
         Func<IAudioSource> audioSourceFactory, ITargetProbe targetProbe, ITranscriber transcriber, ITextOutput output,
-        ITranscriptHistory? history = null, Func<IOverlayView?>? getOverlay = null, AudioLevelTracker? audioTracker = null)
+        ITranscriptHistory? history = null, Func<IOverlayView?>? getOverlay = null, AudioLevelTracker? audioTracker = null,
+        Func<bool>? getAutoPaste = null, ISoundCuePlayer? soundPlayer = null)
     {
         this.post = post ?? throw new ArgumentNullException(nameof(post));
         this.sidecars = sidecars ?? throw new ArgumentNullException(nameof(sidecars));
@@ -52,6 +55,8 @@ public sealed class EffectRunner : IAsyncDisposable
         this.history = history ?? new TranscriptHistory();
         this.getOverlay = getOverlay;
         this.audioTracker = audioTracker;
+        this.getAutoPaste = getAutoPaste;
+        this.soundPlayer = soundPlayer;
     }
 
     /// <summary>Runs one reducer batch in order. Called on the loop task only.</summary>
@@ -79,14 +84,17 @@ public sealed class EffectRunner : IAsyncDisposable
             case StartCapture start:
                 audioTracker?.Reset();
                 getOverlay?.Invoke()?.ShowListening(audioTracker?.GenerateWaveformBars(5) ?? [0.15f, 0.15f, 0.15f, 0.15f, 0.15f]);
+                soundPlayer?.PlayStart();
                 BeginCapture(start.Id);
                 break;
             case StopCapture stop:
                 getOverlay?.Invoke()?.ShowTranscribing();
+                soundPlayer?.PlayStop();
                 EndCapture(stop.Id);
                 break;
             case DiscardCapture discard:
                 getOverlay?.Invoke()?.Hide();
+                soundPlayer?.PlayCancel();
                 Discard(discard.Id);
                 break;
             case Transcribe transcribe: Track(TranscribeAsync(transcribe.Id, transcribe.WavPath)); break;
@@ -314,6 +322,10 @@ public sealed class EffectRunner : IAsyncDisposable
 
     private Task<DeliveryResult> DeliverToTargetAsync(Deliver deliver, CancellationToken ct)
     {
+        if (getAutoPaste?.Invoke() == false)
+        {
+            return output.CopyOnlyAsync(deliver.Text, ct);
+        }
 #if SOMNING_TEST_HARNESS
         if (BeforeDeliver is { } barrier) return BarrierThenDeliverAsync(barrier, deliver, ct);
 #endif

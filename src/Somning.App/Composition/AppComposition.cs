@@ -10,12 +10,15 @@ using Somning.Core.Output;
 using Somning.Core.Overlay;
 using Somning.Core.Paths;
 using Somning.Core.Ports;
+using Somning.Core.Settings;
 using Somning.Core.Trigger;
+using Somning.Platform.Windows.Audio;
 using Somning.Platform.Windows.Clipboard;
 using Somning.Platform.Windows.Hook;
 using Somning.Platform.Windows.Overlay;
 using Somning.Platform.Windows.Paste;
 using Somning.Platform.Windows.Recording;
+using Somning.Platform.Windows.Settings;
 using Somning.Platform.Windows.Tray;
 #if SOMNING_TEST_HARNESS
 using Somning.App.TestHarness;
@@ -38,11 +41,21 @@ public sealed class AppComposition : IAsyncDisposable
     private Task recovery = Task.CompletedTask;
     private Action? shutdownCallback;
 
-    public AppComposition(Func<IAudioSource> audioSourceFactory)
+    public AppComposition(Func<IAudioSource> audioSourceFactory, ISettingsStore? settingsStore = null, DynamicAudioSourceFactory? dynamicAudio = null)
     {
         ArgumentNullException.ThrowIfNull(audioSourceFactory);
         Directory.CreateDirectory(SomningPaths.RecordingsDir);
         Directory.CreateDirectory(SomningPaths.LogsDir);
+        DynamicAudioFactory = dynamicAudio;
+        SettingsStore = settingsStore ?? new JsonSettingsStore();
+        Settings = SettingsStore.LoadAsync().GetAwaiter().GetResult();
+        AutoPasteEnabled = Settings.AutoPaste;
+        SoundPlayer.Enabled = Settings.PlaySoundCues;
+        if (DynamicAudioFactory is not null && !string.IsNullOrEmpty(Settings.MicrophoneDeviceId))
+        {
+            DynamicAudioFactory.CurrentDeviceId = Settings.MicrophoneDeviceId;
+        }
+
         Engine = new EngineSupervisor(options: SupervisorOptionsForHost());
         clipboard = new ClipboardWriter();
         var integrity = new IntegrityReader();
@@ -56,7 +69,7 @@ public sealed class AppComposition : IAsyncDisposable
         Host = new DictationHost(PhysicalKeyState.AreChordModifiersDown, idTaken: IdTaken,
             initialState: DictationState.Initial with { RecoveryAdmissionPending = true });
         Hook.IsRecordingActive = () => Host.State.Capture is not null;
-        Runner = new EffectRunner(e => Host.Post(e), Sidecars, SomningPaths.RecordingsDir, audioSourceFactory, probe, Engine, paster, History, () => Overlay, AudioLevelTracker);
+        Runner = new EffectRunner(e => Host.Post(e), Sidecars, SomningPaths.RecordingsDir, audioSourceFactory, probe, Engine, paster, History, () => Overlay, AudioLevelTracker, () => AutoPasteEnabled, SoundPlayer);
         Engine.RequestWritten += Runner.OnRequestWritten;
         Engine.StatusChanged += status => Host.Post(new EngineStatusChanged(status));
         Host.Notified += OnNotified;
@@ -70,7 +83,13 @@ public sealed class AppComposition : IAsyncDisposable
     public RecoverySnapshot Snapshot { get; }
     public ITranscriptHistory History { get; } = new TranscriptHistory();
     public AudioLevelTracker AudioLevelTracker { get; } = new();
+    public SoundCuePlayer SoundPlayer { get; } = new();
+    public bool AutoPasteEnabled { get; set; } = true;
+    public ISettingsStore SettingsStore { get; }
+    public UserSettings Settings { get; private set; }
+    public DynamicAudioSourceFactory? DynamicAudioFactory { get; }
     public IOverlayView? Overlay { get; private set; }
+    public ISettingsWindow? SettingsWindow { get; private set; }
     public TrayIconManager? Tray { get; private set; }
 
     public void EnableOverlay(IOverlayView? customOverlay = null)
@@ -78,11 +97,37 @@ public sealed class AppComposition : IAsyncDisposable
         Overlay = customOverlay ?? new OverlayWindowManager();
     }
 
+    public void EnableSettings(ISettingsWindow? customWindow = null)
+    {
+        SettingsWindow = customWindow ?? new SettingsWindowManager();
+    }
+
+    public void OpenSettings()
+    {
+        if (SettingsWindow is null) EnableSettings();
+        SettingsWindow?.Show(Settings, OnSettingsSaved);
+    }
+
+    public void OnSettingsSaved(UserSettings updated)
+    {
+        Settings = updated;
+        _ = SettingsStore.SaveAsync(updated);
+        AutoPasteEnabled = updated.AutoPaste;
+        SoundPlayer.Enabled = updated.PlaySoundCues;
+        if (DynamicAudioFactory is not null)
+        {
+            DynamicAudioFactory.CurrentDeviceId = updated.MicrophoneDeviceId;
+        }
+        Log.Information("Settings updated. Mic={Mic} AutoPaste={AutoPaste} SoundCues={SoundCues}",
+            updated.MicrophoneDeviceId, updated.AutoPaste, updated.PlaySoundCues);
+    }
+
     public void EnableTray(Action requestShutdown)
     {
         shutdownCallback = requestShutdown;
         Tray = new TrayIconManager();
         Tray.CanRepaste = () => History.HasTranscript;
+        Tray.OpenSettingsRequested += () => OpenSettings();
         Tray.RepasteLastRequested += () => _ = RepasteLastAsync();
         Tray.OpenLogsRequested += () => OpenLogsDirectory();
         Tray.ExitRequested += () => shutdownCallback?.Invoke();
@@ -224,6 +269,7 @@ public sealed class AppComposition : IAsyncDisposable
 #if SOMNING_TEST_HARNESS
         if (Pipe is not null) await Pipe.DisposeAsync().ConfigureAwait(false);
 #endif
+        SettingsWindow?.Dispose();
         Overlay?.Dispose();
         Tray?.Dispose();
         Hook.Dispose();

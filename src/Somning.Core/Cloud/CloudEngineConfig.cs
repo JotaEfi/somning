@@ -43,8 +43,11 @@ public sealed record CloudEngineConfig
     /// <summary>Request model: the provider default, or the explicit model name from the settings.</summary>
     public string ResolveModel() => CloudProvider.DefaultModel(Provider);
 
-    /// <summary>Absolute endpoint for this attempt.</summary>
-    public Uri ResolveEndpoint() => new(CustomEndpoint ?? CloudProvider.DefaultEndpoint(Provider), UriKind.Absolute);
+    /// <summary>Absolute endpoint for this attempt; <paramref name="fallback"/> is used only when no override exists.</summary>
+    public Uri ResolveEndpoint(Uri? fallback = null) =>
+        CustomEndpoint is { } custom
+            ? new Uri(custom, UriKind.Absolute)
+            : fallback ?? new Uri(CloudProvider.DefaultEndpoint(Provider), UriKind.Absolute);
 
     /// <summary>Validates that this configuration can be sent to a cloud provider.</summary>
     public void Validate()

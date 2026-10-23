@@ -28,8 +28,8 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **STT-02**: Local engine uses the RX 7600 GPU (Vulkan) when available and automatically restarts in CPU mode if GPU mode fails, without crashing the app
 - [x] **STT-03**: Accidental taps, very short (< ~0.4 s) or silence/noise-only recordings produce no pasted text (no Whisper hallucinations such as "Obrigado." / "Amara.org")
 - [x] **STT-04**: Model is preloaded and warmed up at app start so the first dictation is not slowed by cold load; a hotkey press before ready is queued, not dropped
-- [ ] **STT-05**: User can choose a cloud engine (Groq whisper-large-v3-turbo or OpenAI gpt-4o-transcribe) by entering an API key; cloud is opt-in only
-- [ ] **STT-06**: Cloud failures (no network, invalid key, rate limit, timeout) show a clear message and keep the recording for retry; no silent fallback
+- [x] **STT-05**: User can choose a cloud engine (Groq whisper-large-v3-turbo or OpenAI gpt-4o-transcribe) by entering an API key; cloud is opt-in only
+- [x] **STT-06**: Cloud failures (no network, invalid key, rate limit, timeout) show a clear message and keep the recording for retry; no silent fallback
 - [x] **STT-07**: User can add custom vocabulary / initial prompt (names, technical terms) that biases transcription
 - [x] **STT-08**: Typical 5–30 s utterance pastes within a few seconds of stopping on the owner's hardware (measured p50/p95 budget defined in Phase 1)
 
@@ -110,8 +110,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | STT-02 | Phase 1 | Complete |
 | STT-03 | Phase 1 | Complete |
 | STT-04 | Phase 1 | Complete |
-| STT-05 | Phase 3 | Pending |
-| STT-06 | Phase 3 | Pending |
+| STT-05 | Phase 3 | Complete |
+| STT-06 | Phase 3 | Complete |
 | STT-07 | Phase 2 | Complete |
 | STT-08 | Phase 1 | Complete |
 | OUT-01 | Phase 1 | Complete |

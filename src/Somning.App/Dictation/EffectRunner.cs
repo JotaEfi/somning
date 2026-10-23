@@ -112,7 +112,7 @@ public sealed class EffectRunner : IAsyncDisposable
                 MetricsLogger.Write(emit.Metrics);
                 lock (createdUtc) createdUtc.Remove(emit.Metrics.Id);
                 post(new NotificationPosted(new DictationNotification("outcome", emit.Metrics.Id, emit.Metrics)));
-                HandleOutcomeOverlay(emit.Metrics.Outcome);
+                HandleOutcomeOverlay(emit.Metrics);
                 break;
             default: Log.Warning("Unknown effect {EffectType}", effect.GetType().Name); break;
         }
@@ -380,25 +380,27 @@ public sealed class EffectRunner : IAsyncDisposable
         lifetime.Dispose();
     }
 
-    private void HandleOutcomeOverlay(string outcome)
+    private void HandleOutcomeOverlay(DictationMetrics metrics)
     {
         var activeOverlay = getOverlay?.Invoke();
         if (activeOverlay is null) return;
 
-        if (outcome is "silence_only")
+        OverlayNoticeKind? notice = metrics.Outcome switch
         {
-            activeOverlay.ShowNotice(OverlayNoticeKind.SilenceOnly);
-            _ = Task.Delay(1800).ContinueWith(_ => activeOverlay.Hide(), TaskScheduler.Default);
-        }
-        else if (outcome is "no_speech")
-        {
-            activeOverlay.ShowNotice(OverlayNoticeKind.NothingDetected);
-            _ = Task.Delay(1800).ContinueWith(_ => activeOverlay.Hide(), TaskScheduler.Default);
-        }
-        else
+            "silence_only" => OverlayNoticeKind.SilenceOnly,
+            "no_speech" => OverlayNoticeKind.NothingDetected,
+            "error" => OverlayNotices.ForErrorCode(metrics.Reason),
+            _ => null
+        };
+
+        if (notice is null)
         {
             activeOverlay.Hide();
+            return;
         }
+
+        activeOverlay.ShowNotice(notice.Value);
+        _ = Task.Delay(1800).ContinueWith(_ => activeOverlay.Hide(), TaskScheduler.Default);
     }
 
     private void HandleStartFailureOverlay(string failureCode)

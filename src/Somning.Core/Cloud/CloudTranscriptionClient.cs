@@ -22,9 +22,13 @@ public sealed class CloudTranscriptionClient : ICloudTranscriptionClient
     private static readonly HttpClient DefaultHttpClient = new() { Timeout = TimeSpan.FromSeconds(90) };
 
     private readonly HttpClient httpClient;
+    private readonly Uri? endpointOverride;
 
-    public CloudTranscriptionClient(HttpClient? httpClient = null) =>
+    public CloudTranscriptionClient(HttpClient? httpClient = null, Uri? endpointOverride = null)
+    {
         this.httpClient = httpClient ?? DefaultHttpClient;
+        this.endpointOverride = endpointOverride;
+    }
 
     public async Task<CloudTranscriptionResult> TranscribeAsync(
         string wavPath,
@@ -49,7 +53,7 @@ public sealed class CloudTranscriptionClient : ICloudTranscriptionClient
             throw new FileNotFoundException("The recording to transcribe was not found.", wavPath);
 
         var model = config.ResolveModel();
-        var endpoint = config.ResolveEndpoint();
+        var endpoint = config.ResolveEndpoint(endpointOverride);
         var durationMs = ReadWavDurationMs(wavPath);
         var stopwatch = Stopwatch.StartNew();
 

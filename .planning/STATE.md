@@ -1,87 +1,51 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 01
-current_phase_name: Dictation Loop MVP
-status: executing
-stopped_at: Completed 01-10-PLAN.md
-last_updated: "2026-10-23T08:55:03.135Z"
+current_phase: 04
+current_phase_name: Packaging, Autostart & Hardening
+status: ready_to_plan
+stopped_at: Completed Phase 03 (Cloud Engine)
+last_updated: "2026-10-23T16:08:00.000Z"
 last_activity: 2026-10-23
-last_activity_desc: Phase 01 execution started
-state_head: eee100d5dd8fbeba83de82babc3d2f973a728abd
+last_activity_desc: Phase 03 completed successfully; ready for Phase 04
+state_head: HEAD
 progress:
   total_phases: 4
-  completed_phases: 0
-  total_plans: 13
-  completed_plans: 10
-  percent: 0
+  completed_phases: 3
+  total_plans: 21
+  completed_plans: 21
+  percent: 75
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-10-22)
+See: `.planning/PROJECT.md` (updated 2026-10-22)
 
 **Core value:** Press the hotkey, speak Portuguese, and accurate text lands in the focused field (and stays in the clipboard), reliably, in any app.
-**Current focus:** Phase 01 — Dictation Loop MVP
+**Current focus:** Phase 04 — Packaging, Autostart & Hardening
 
 ## Current Position
 
-Phase: 01 (Dictation Loop MVP) — EXECUTING
-Plan: 2 of 13
-Status: Ready to execute
-Last activity: 2026-10-23 — Phase 01 execution started
+Phase: 04 (Packaging, Autostart & Hardening) — NOT STARTED
+Status: Ready to plan
+Last activity: 2026-10-23 — Phase 03 (Cloud Engine) completed with 2/2 plans executed and verified
 
-Progress: [░░░░░░░░░░] 0%
-
-## Performance Metrics
-
-**Velocity:**
-- Total plans completed: 0
-- Average duration: -
-- Total execution time: -
-
-**By Phase:**
-
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| - | - | - | - |
-**Per-Plan Metrics:**
-
-| Plan | Duration | Tasks | Files |
-|------|----------|-------|-------|
-| Phase 01 P01 | 23min | 3 tasks | 45 files |
-| Phase 01 P02 | 11min | 2 tasks | 21 files |
-| Phase 01 P06 | 33m | 3 tasks | 26 files |
-| Phase 01 P09 | 45min | 2 tasks | 15 files |
-| Phase 01 P10 | 32min | 2 tasks | 12 files |
+Progress: [███████░░░] 75%
 
 ## Accumulated Context
 
-### Decisions
+### Completed Phases
+- **Phase 01: Dictation Loop MVP (13/13 plans)**: Headless end-to-end loop (hotkey, mic, local Whisper pt-BR, clipboard and safe paste), Vulkan/CPU benchmark, recovery and metrics logging.
+- **Phase 02: Overlay, Tray, Settings & Cancel (6/6 plans)**: System tray menu, non-intrusive waveform pill overlay, persisted settings with DPAPI, dynamic audio device switching, Esc cancellation, first-run model download with HTTP resume and SHA-256 validation.
+- **Phase 03: Cloud Engine (2/2 plans)**:
+  - `03-01`: Cloud contracts, Groq (`whisper-large-v3-turbo`) & OpenAI (`whisper-1`) clients, key masking (`ApiKeyMasker`), error classification (`no_network`, `invalid_api_key`, `rate_limit`, `timeout`) and overlay pt-BR notices.
+  - `03-02`: `RouterTranscriber` dynamic routing, DPAPI key decryption, error reporting without silent fallback, spool WAV preservation on failure, and mock HTTP fixture suite against `tests/fixtures/tracer/hoje.wav`.
 
-Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
+### Key Decisions
+- Cloud is strictly opt-in (`CloudProvider.None` keeps local Whisper engine).
+- Cloud failures never fallback to local silently; audio is preserved in spool for retry.
+- API keys are never exposed in plaintext in logs, metrics, or exception messages.
 
-- Roadmap: 4 phases per research SUMMARY (coarse granularity); Phase 1 starts with Win10 published-build Whisper.net gate and benchmark
-- Roadmap: STT-07 (vocabulary) placed in Phase 2 with settings; cloud engine reuses it in Phase 3
-- [Phase 01]: EffectRunner creates a fresh IAudioSource per capture via Func<IAudioSource> (sources start only once); harness uses paced FileAudioSource
-- [Phase 01]: Capture end is owned by the first of StopCapture/Faulted (CaptureSession.TryBeginEnd); both await StartTask; failed start posts only CaptureStartFailed
-- [Phase 01]: Adapter notifications are posted as loop-internal NotificationPosted so DictationHost.Notified is always raised on the loop
-- [Phase 01]: EffectRunner stamps sidecar CreatedUtc on first save (stored or UtcNow) and preserves it, replacing the 01-09 epoch placeholder
-
-### Pending Todos
-
-None yet.
-
-### Blockers/Concerns
-
-- Published Windows 10 CPU/Vulkan gate passed; both backends have 0% WER on the tracer fixture (GATE-RESULT.md).
-- Full latency/quality matrix remains pending; tracer inference measured 465.89 ms Vulkan and 13150.74 ms CPU.
-- UI/E2E tests need an interactive console session (not Session 0)
-
-## Session Continuity
-
-Last session: 2026-10-23T08:55:03.107Z
-Stopped at: Completed 01-10-PLAN.md
-Resume file: None
+### Next Steps
+- Plan and execute Phase 04: Per-user Windows installer (`DIST-01`), start-with-Windows registry entry (`DIST-02`), sleep/resume/lock soak resilience and paste matrix report (`DIST-03`).

@@ -8,7 +8,7 @@ Somning goes from a headless, agent-verifiable dictation loop (hotkey, mic, loca
 
 - [x] **Phase 1: Dictation Loop MVP** - Headless end-to-end: hotkey to mic to local Whisper pt-BR to clipboard and auto-paste, gated by a Win10 published-build inference benchmark
 - [x] **Phase 2: Overlay, Tray, Settings & Cancel** - Daily-usable shell: waveform pill, tray, persisted settings, Esc cancel, first-run model download
-- [ ] **Phase 3: Cloud Engine** - Opt-in Groq/OpenAI transcription with explicit errors and recoverable recordings
+- [x] **Phase 3: Cloud Engine** - Opt-in Groq/OpenAI transcription with explicit errors and recoverable recordings
 - [ ] **Phase 4: Packaging, Autostart & Hardening** - Per-user installer, start-with-Windows, sleep/resume and soak resilience
 
 ## Phase Details
@@ -78,7 +78,7 @@ Plans (all execution and verification sequential):
 
 **Plans**: 2 plans
 - [x] 03-01-PLAN.md - Cloud transcriber contracts, Groq & OpenAI clients, error classification & key masking (wave 1)
-- [ ] 03-02-PLAN.md - Mock HTTP fixture suite, recording retention & cloud adapter integration (wave 2)
+- [x] 03-02-PLAN.md - Mock HTTP fixture suite, recording retention & cloud adapter integration (wave 2)
 **UI hint**: yes
 
 ### Phase 4: Packaging, Autostart & Hardening
@@ -100,5 +100,5 @@ Plans (all execution and verification sequential):
 |-------|----------------|--------|-----------|
 | 1. Dictation Loop MVP | 13/13 | Complete | 2026-10-23 |
 | 2. Overlay, Tray, Settings & Cancel | 6/6 | Complete | 2026-10-23 |
-| 3. Cloud Engine | 1/2 | In progress | - |
+| 3. Cloud Engine | 2/2 | Complete | 2026-10-23 |
 | 4. Packaging, Autostart & Hardening | 0/TBD | Not started | - |

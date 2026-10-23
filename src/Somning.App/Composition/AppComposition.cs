@@ -4,6 +4,7 @@ using Serilog;
 using Somning.App.Dictation;
 using Somning.App.Engine;
 using Somning.App.Recovery;
+using Somning.Core.Cloud;
 using Somning.Core.Dictation;
 using Somning.Core.Engine;
 using Somning.Core.Model;
@@ -58,6 +59,8 @@ public sealed class AppComposition : IAsyncDisposable
         }
 
         Engine = new EngineSupervisor(options: SupervisorOptionsForHost());
+        CloudClient = new CloudTranscriptionClient();
+        Transcriber = new RouterTranscriber(Engine, CloudClient, () => Settings, new DpapiSettingsProtector());
         clipboard = new ClipboardWriter();
         var integrity = new IntegrityReader();
         probe = new ForegroundProbe(integrity);
@@ -70,13 +73,15 @@ public sealed class AppComposition : IAsyncDisposable
         Host = new DictationHost(PhysicalKeyState.AreChordModifiersDown, idTaken: IdTaken,
             initialState: DictationState.Initial with { RecoveryAdmissionPending = true });
         Hook.IsRecordingActive = () => Host.State.Capture is not null;
-        Runner = new EffectRunner(e => Host.Post(e), Sidecars, SomningPaths.RecordingsDir, audioSourceFactory, probe, Engine, paster, History, () => Overlay, AudioLevelTracker, () => AutoPasteEnabled, SoundPlayer);
+        Runner = new EffectRunner(e => Host.Post(e), Sidecars, SomningPaths.RecordingsDir, audioSourceFactory, probe, Transcriber, paster, History, () => Overlay, AudioLevelTracker, () => AutoPasteEnabled, SoundPlayer);
         Engine.RequestWritten += Runner.OnRequestWritten;
         Engine.StatusChanged += status => Host.Post(new EngineStatusChanged(status));
         Host.Notified += OnNotified;
     }
 
     public EngineSupervisor Engine { get; }
+    public CloudTranscriptionClient CloudClient { get; }
+    public RouterTranscriber Transcriber { get; }
     public KeyboardHook Hook { get; }
     public DictationHost Host { get; }
     public EffectRunner Runner { get; }
@@ -119,8 +124,8 @@ public sealed class AppComposition : IAsyncDisposable
         {
             DynamicAudioFactory.CurrentDeviceId = updated.MicrophoneDeviceId;
         }
-        Log.Information("Settings updated. Mic={Mic} AutoPaste={AutoPaste} SoundCues={SoundCues}",
-            updated.MicrophoneDeviceId, updated.AutoPaste, updated.PlaySoundCues);
+        Log.Information("Settings updated. Mic={Mic} AutoPaste={AutoPaste} SoundCues={SoundCues} Provider={Provider}",
+            updated.MicrophoneDeviceId, updated.AutoPaste, updated.PlaySoundCues, updated.CloudProvider);
     }
 
     public void EnableTray(Action requestShutdown)

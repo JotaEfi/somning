@@ -23,7 +23,8 @@ public sealed class HarnessPipeTests
         Requires.Desktop();
         using var app = await AppHarnessDriver.StartAsync(Silence, waitForEngine: true);
         using var notepad = NotepadDriver.Start();
-        Requires.That(ForegroundHelper.EnsureForeground(notepad.Window, notepad.Edit), "Notepad could not be brought to the foreground.");
+        Requires.That(ForegroundHelper.EnsureForegroundFocus(notepad.Window, notepad.Edit),
+            "Notepad edit control did not become the active foreground focus.");
         var seq0 = await app.LastSeqAsync();
 
         HotkeyInjector.Chord(80);
@@ -78,11 +79,12 @@ public sealed class HarnessPipeTests
         Requires.Desktop();
         using var app = await AppHarnessDriver.StartAsync(Tracer, waitForEngine: true);
         using var notepad = NotepadDriver.Start();
-        Requires.That(ForegroundHelper.EnsureForeground(notepad.Window, notepad.Edit), "Notepad could not be brought to the foreground.");
+        Requires.That(ForegroundHelper.EnsureForegroundFocus(notepad.Window, notepad.Edit),
+            "Notepad edit control did not become the active foreground focus.");
         await app.ArmDeliveryBarrierAsync();
         var seq0 = await app.LastSeqAsync();
 
-        await TapTapAsync(Tracer);
+        await TapTapAsync(Tracer, notepad);
         var target = await app.WaitEventAsync("target_captured", seq0, null, TimeSpan.FromSeconds(10));
         await app.WaitEventAsync("transcribe_started", seq0, target.Id, TimeSpan.FromSeconds(30));
 
@@ -91,6 +93,8 @@ public sealed class HarnessPipeTests
         Assert.Equal("Busy", (await app.StatusAsync()).Phase);
         Assert.Equal("", notepad.GetText());
 
+        Requires.That(ForegroundHelper.EnsureForegroundFocus(notepad.Window, notepad.Edit),
+            "Notepad edit control did not retain focus before delivery-barrier release.");
         await app.ReleaseDeliveryBarrierAsync();
         var outcome = await app.WaitEventAsync("outcome", seq0, target.Id, TimeSpan.FromSeconds(30));
         Assert.Equal("pasted", outcome.Outcome);
@@ -109,18 +113,21 @@ public sealed class HarnessPipeTests
 
         await app.ConnectAsync(); // drops the arming client's connection, then reconnects
         var seq0 = await app.LastSeqAsync();
-        await TapTapAsync(Tracer);
+        await TapTapAsync(Tracer, notepad);
 
         var outcome = await app.WaitOutcomeAsync(seq0, TimeSpan.FromSeconds(60));
         Assert.Equal("pasted", outcome.Outcome);
     }
 
-    private static async Task TapTapAsync(string fixture)
+    private static async Task TapTapAsync(string fixture, NotepadDriver? notepad = null)
     {
         TimeSpan length;
         using (var reader = new WaveFileReader(fixture)) length = reader.TotalTime;
         HotkeyInjector.Chord(80);
         await Task.Delay(length + TimeSpan.FromSeconds(0.8), TestContext.Current.CancellationToken);
+        if (notepad is not null)
+            Requires.That(ForegroundHelper.EnsureForegroundFocus(notepad.Window, notepad.Edit),
+                "Notepad edit control did not retain focus before the stop hotkey.");
         HotkeyInjector.Chord(80);
     }
 }

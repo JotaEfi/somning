@@ -1,4 +1,4 @@
-using Somning.Core.Ports;
+﻿using Somning.Core.Ports;
 using NAudio.Wave;
 
 namespace Somning.Platform.Windows.Recording;
@@ -58,6 +58,11 @@ public sealed class SpoolWriter : IPcmSink, IDisposable
         }
     }
 
+    internal void AbandonForTest()
+    {
+        if (Interlocked.Exchange(ref disposed, 1) == 0) stream.Dispose();
+    }
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref disposed, 1) != 0) return;
@@ -71,3 +76,4 @@ public sealed class SpoolWriter : IPcmSink, IDisposable
         }
     }
 }
+

@@ -11,7 +11,22 @@ public static class ForegroundHelper
     private static readonly HWND NotTopmost = new(-2);
     private const uint SwpNoSize = 0x0001, SwpNoMove = 0x0002, SwpShowWindow = 0x0040;
 
+    /// <summary>
+    /// Retries the acquisition for up to 1 s: right after other test windows close (e.g. two Notepads), Windows can
+    /// briefly refuse foreground changes, which made a single attempt order-dependent in full-suite runs (01-11).
+    /// </summary>
     public static bool EnsureForeground(nint window, nint editWindow)
+    {
+        var until = DateTime.UtcNow + TimeSpan.FromSeconds(1);
+        while (true)
+        {
+            if (TryEnsureForeground(window, editWindow)) return true;
+            if (DateTime.UtcNow > until) return false;
+            Thread.Sleep(50);
+        }
+    }
+
+    private static bool TryEnsureForeground(nint window, nint editWindow)
     {
         var hwnd = new HWND(window);
         _ = PInvoke.SetForegroundWindow(hwnd);

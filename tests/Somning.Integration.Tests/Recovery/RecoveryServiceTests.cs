@@ -153,10 +153,12 @@ public sealed class RecoveryServiceTests
 
         var second = ClipboardProbe.ReadText();
         var pasted = notepad.GetText();
-        Assert.True(Wer.Compute(TracerText, second) <= 0.10, $"Second live text: '{second}'");
-        Assert.True(pasted.EndsWith(second, StringComparison.Ordinal), $"Notepad '{pasted}' should end with '{second}'.");
+        var evidence = $"\nNotepad: '{pasted}'\nClipboard: '{second}'\nOutcomes: " +
+            string.Join(" | ", outcomes.Select(o => o.Metrics?.ToJsonString())) + "\nLog:\n" + log;
+        Assert.True(Wer.Compute(TracerText, second) <= 0.10, "Second live text is wrong." + evidence);
+        Assert.True(pasted.EndsWith(second, StringComparison.Ordinal), "Notepad should end with the second text." + evidence);
         var first = pasted[..^second.Length];
-        Assert.True(Wer.Compute(TracerText, first) <= 0.10, $"First live text: '{first}'");
+        Assert.True(Wer.Compute(TracerText, first) <= 0.10, $"First live text '{first}' is wrong." + evidence);
     }
 
     private const int RecoveryCount = 20;

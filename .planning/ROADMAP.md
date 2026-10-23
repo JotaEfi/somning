@@ -6,7 +6,7 @@ Somning goes from a headless, agent-verifiable dictation loop (hotkey, mic, loca
 
 ## Phases
 
-- [ ] **Phase 1: Dictation Loop MVP** - Headless end-to-end: hotkey to mic to local Whisper pt-BR to clipboard and auto-paste, gated by a Win10 published-build inference benchmark
+- [x] **Phase 1: Dictation Loop MVP** - Headless end-to-end: hotkey to mic to local Whisper pt-BR to clipboard and auto-paste, gated by a Win10 published-build inference benchmark
 - [ ] **Phase 2: Overlay, Tray, Settings & Cancel** - Daily-usable shell: waveform pill, tray, persisted settings, Esc cancel, first-run model download
 - [ ] **Phase 3: Cloud Engine** - Opt-in Groq/OpenAI transcription with explicit errors and recoverable recordings
 - [ ] **Phase 4: Packaging, Autostart & Hardening** - Per-user installer, start-with-Windows, sleep/resume and soak resilience
@@ -26,7 +26,7 @@ Somning goes from a headless, agent-verifiable dictation loop (hotkey, mic, loca
   4. Killing the engine worker or forcing GPU failure mid-run restarts it in CPU mode without crashing the app; a recording interrupted by a crash is recovered from its spool WAV on restart
   5. Pasting while the target window changed or is elevated leaves the text on the clipboard and logs a manual-paste outcome; every dictation logs capture, load, inference and paste timings with API keys redacted
 
-**Plans:** 10/13 plans executed
+**Plans:** 13/13 plans executed
 
 Plans (all execution and verification sequential):
 - [x] 01-01-PLAN.md - Worker/protocol tracer, published gate and model fetch (wave 1)
@@ -39,9 +39,9 @@ Plans (all execution and verification sequential):
 - [x] 01-08-PLAN.md - Isolated full benchmark and selected defaults (wave 5)
 - [x] 01-09-PLAN.md - Pure reducer, admission and complete metrics (wave 6)
 - [x] 01-10-PLAN.md - App owner loop and ordered effects (wave 7)
-- [ ] 01-11-PLAN.md - Startup recovery and replayable harness (wave 8)
-- [ ] 01-12-PLAN.md - Notepad/silence/crash and latency E2E (wave 9)
-- [ ] 01-13-PLAN.md - Focus/metrics, published App and final verifier (wave 10)
+- [x] 01-11-PLAN.md - Startup recovery and replayable harness (wave 8)
+- [x] 01-12-PLAN.md - Notepad/silence/crash and latency E2E (wave 9)
+- [x] 01-13-PLAN.md - Focus/metrics, published App and final verifier (wave 10)
 
 ### Phase 2: Overlay, Tray, Settings & Cancel
 

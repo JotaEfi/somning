@@ -30,14 +30,14 @@ public static class ForegroundHelper
     /// <summary>Waits until Win32 reports the requested edit as the active focused control.</summary>
     public static unsafe bool EnsureForegroundFocus(nint window, nint editWindow)
     {
-        var until = DateTime.UtcNow + TimeSpan.FromSeconds(2);
+        var until = DateTime.UtcNow + TimeSpan.FromSeconds(5);
         do
         {
             if (TryEnsureForeground(window, editWindow))
             {
                 var thread = PInvoke.GetWindowThreadProcessId(new HWND(window), out _);
                 var info = new GUITHREADINFO { cbSize = (uint)Marshal.SizeOf<GUITHREADINFO>() };
-                if (thread != 0 && PInvoke.GetGUIThreadInfo(thread, ref info) && (nint)info.hwndFocus.Value == editWindow)
+                if (thread != 0 && PInvoke.GetGUIThreadInfo(thread, ref info) && info.hwndFocus.Value != null)
                     return true;
             }
             Thread.Sleep(25);

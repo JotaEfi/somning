@@ -125,28 +125,33 @@ public sealed class EffectRunner : IAsyncDisposable
             return;
         }
 
-        Task<AudioStartInfo> startTask;
-        try { startTask = source.StartAsync(writer, lifetime.Token); }
-        catch (Exception ex) { startTask = Task.FromException<AudioStartInfo>(ex); }
-        var session = new CaptureSession(id, writer, source, startTask) { WavPath = wavPath };
+        // The fault handler is attached before StartAsync so a fault at any point reaches this session (M11).
+        var started = new TaskCompletionSource<AudioStartInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var session = new CaptureSession(id, writer, source, started.Task) { WavPath = wavPath };
+        source.Faulted += fault => OnFaulted(session, fault);
         sessions[id] = session;
-        Track(ReportStartAsync(session));
+        Track(RunStartAsync(session, started));
     }
 
-    private async Task ReportStartAsync(CaptureSession session)
+    private async Task RunStartAsync(CaptureSession session, TaskCompletionSource<AudioStartInfo> started)
     {
+        AudioStartInfo info;
         try
         {
-            var info = await session.StartTask.ConfigureAwait(false);
-            post(new CaptureStarted(session.Id, info.MicOpenMs));
+            info = await session.Source.StartAsync(session.Writer, lifetime.Token).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             Log.Warning(ex, "Capture start failed for {Id}", session.Id);
+            started.TrySetException(ex);
+            _ = started.Task.Exception; // observed: waiters (stop/fault) return without posting
             sessions.TryRemove(session.Id, out _);
             await session.ReleaseAsync().ConfigureAwait(false);
             post(new CaptureStartFailed(session.Id, StartFailureCode(ex)));
+            return;
         }
+        started.TrySetResult(info);
+        post(new CaptureStarted(session.Id, info.MicOpenMs));
     }
 
     /// <summary>D-13: the paste target is captured at stop, BEFORE the capture is stopped.</summary>
@@ -158,21 +163,53 @@ public sealed class EffectRunner : IAsyncDisposable
         Track(StopAsync(session, target));
     }
 
+    /// <summary>
+    /// Serialized per capture (H8): a stop issued while StartAsync is pending waits for it; a failed start already
+    /// posted CaptureStartFailed, and a capture that already faulted already posted CaptureFaulted.
+    /// </summary>
     private async Task StopAsync(CaptureSession session, PasteTarget target)
     {
-        long captureMs = 0;
+        if (!session.TryBeginEnd()) return;
+        if (!await StartSucceededAsync(session).ConfigureAwait(false)) return;
+        var captureMs = await StopAndReleaseAsync(session).ConfigureAwait(false);
+        post(new CaptureStopped(session.Id, target, captureMs, session.WavPath));
+    }
+
+    /// <summary>Any thread (M11): marshal to a task that stops the source, finalizes the spool and posts once.</summary>
+    private void OnFaulted(CaptureSession session, AudioFault fault)
+    {
+        if (!session.TryBeginEnd()) return; // a stop already owns this capture; its finalization covers the spool
+        Track(Task.Run(() => FinalizeFaultAsync(session, fault), CancellationToken.None));
+    }
+
+    private async Task FinalizeFaultAsync(CaptureSession session, AudioFault fault)
+    {
+        Log.Warning("Capture fault for {Id} code={Code}", session.Id, fault.Code);
+        if (!await StartSucceededAsync(session).ConfigureAwait(false)) return;
+        await StopAndReleaseAsync(session).ConfigureAwait(false);
+        post(new CaptureFaulted(session.Id, fault.Code, fault.Message, Environment.TickCount64));
+    }
+
+    private static async Task<bool> StartSucceededAsync(CaptureSession session)
+    {
         try
         {
-            await session.Source.StopAsync().ConfigureAwait(false);
+            await session.StartTask.ConfigureAwait(false);
+            return true;
         }
+        catch (Exception) { return false; }
+    }
+
+    /// <summary>Stops the source, then disposes source and writer (WAV header finalized, file preserved).</summary>
+    private async Task<long> StopAndReleaseAsync(CaptureSession session)
+    {
+        try { await session.Source.StopAsync().ConfigureAwait(false); }
         catch (Exception ex) { Log.Warning(ex, "Capture stop reported an error for {Id}", session.Id); }
-        finally
-        {
-            captureMs = (long)session.Writer.Duration.TotalMilliseconds;
-            sessions.TryRemove(session.Id, out _);
-            await session.ReleaseAsync().ConfigureAwait(false);
-        }
-        post(new CaptureStopped(session.Id, target, captureMs, session.WavPath));
+        var captureMs = (long)session.Writer.Duration.TotalMilliseconds;
+        sessions.TryRemove(session.Id, out _);
+        try { await session.ReleaseAsync().ConfigureAwait(false); }
+        catch (Exception ex) { Log.Warning(ex, "Capture release reported an error for {Id}", session.Id); }
+        return captureMs;
     }
 
     private static string StartFailureCode(Exception ex) => ex switch

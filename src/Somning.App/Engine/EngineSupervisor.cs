@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
 using Serilog;
@@ -6,154 +5,367 @@ using Somning.Core.Engine;
 using Somning.Core.Paths;
 using Somning.Core.Ports;
 using Somning.Engine.Protocol;
+
 namespace Somning.App.Engine;
-public sealed class EngineSupervisor(string? enginePath = null) : ITranscriber
+
+public sealed class EngineSupervisor(string? enginePath = null, SupervisorOptions? options = null) : ITranscriber
 {
-    private readonly ConcurrentDictionary<string, TaskCompletionSource<EngineMessage>> pending = new();
-    private readonly TaskCompletionSource<EngineSessionInfo> ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly SupervisorOptions options = options ?? new SupervisorOptions();
+    private readonly IClock clock = options?.Clock ?? new SystemClock();
+    private readonly SemaphoreSlim requestGate = new(1, 1);
     private readonly SemaphoreSlim writes = new(1, 1);
-    private Process? process;
-    private Task stdout = Task.CompletedTask, stderr = Task.CompletedTask;
-    private EngineSessionInfo? session;
-    private bool disposing;
-    private bool outputEnded;
+    private readonly SemaphoreSlim restartGate = new(1, 1);
     private readonly object lifecycle = new();
+    private readonly CancellationTokenSource lifetime = new();
+    private EngineProcess? worker;
+    private EngineSessionInfo? session;
+    private Task startTask = Task.CompletedTask;
+    private TaskCompletionSource<EngineMessage>? pending;
+    private string? pendingRequestId;
+    private string? requestedBackend;
+    private bool disposing;
+    private bool firstWorker = true;
+    private TaskCompletionSource? activeRecovery;
+    private int restartCount;
+    private RestartPolicy restartPolicy = new();
+
     public EngineStatus Status { get; private set; } = EngineStatus.Starting;
     public event Action<EngineStatus>? StatusChanged;
+    public event Action<string>? RequestWritten;
     public string? ActiveBackend => session?.Backend;
+    public int RestartCount => Volatile.Read(ref restartCount);
+    internal Process? ActiveProcess => worker?.Process;
+    internal Task InferenceStarted => worker?.InferenceStarted ?? Task.CompletedTask;
+
     private void SetStatus(EngineStatus status)
-    { lock (lifecycle) { Status = status; StatusChanged?.Invoke(status); } }
-    public async Task StartAsync(string backend, CancellationToken ct)
     {
-        if (process is not null) throw new InvalidOperationException("Engine already started.");
+        lock (lifecycle) { Status = status; StatusChanged?.Invoke(status); }
+    }
+
+    public Task StartAsync(string backend, CancellationToken ct)
+    {
         if (backend is not ("cpu" or "vulkan")) throw new ArgumentException("Invalid backend.", nameof(backend));
-        SetStatus(EngineStatus.Starting);
+        lock (lifecycle)
+        {
+            ObjectDisposedException.ThrowIf(disposing, this);
+            if (worker is not null || startTask != Task.CompletedTask) throw new InvalidOperationException("Engine already started.");
+            requestedBackend = backend;
+            startTask = StartInitialAsync(backend, ct);
+            return startTask;
+        }
+    }
+
+    private async Task StartInitialAsync(string backend, CancellationToken ct)
+    {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, lifetime.Token);
+        string nextBackend = backend;
+        bool initial = true;
+        while (!disposing && !linked.IsCancellationRequested)
+        {
+            try
+            {
+                await StartWorkerAsync(nextBackend, linked.Token, initial);
+                return;
+            }
+            catch (Exception ex) when (ex is IOException or TimeoutException or InvalidOperationException)
+            {
+                Log.Warning(ex, "Engine worker startup failed");
+                var decision = DecideRestart(nextBackend, ex.Message);
+                if (decision is RestartDecision.GiveUp)
+                {
+                    SetStatus(EngineStatus.Failed);
+                    return;
+                }
+                var restart = (RestartDecision.Restart)decision;
+                if (!options.ZeroBackoff && restart.Delay > TimeSpan.Zero) await Task.Delay(restart.Delay, linked.Token);
+                nextBackend = restart.Backend;
+                initial = false;
+            }
+        }
+    }
+
+    private async Task StartWorkerAsync(string backend, CancellationToken ct, bool initial)
+    {
+        SetStatus(initial ? EngineStatus.Starting : EngineStatus.Restarting);
         Directory.CreateDirectory(SomningPaths.RecordingsDir);
+        string modelsDir = options.ModelsDirOverride ?? SomningPaths.ModelsDir;
         var info = new ProcessStartInfo(EngineLocator.Find(enginePath))
         {
             UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true,
             RedirectStandardOutput = true, RedirectStandardError = true, StandardInputEncoding = new UTF8Encoding(false),
             StandardOutputEncoding = new UTF8Encoding(false), StandardErrorEncoding = new UTF8Encoding(false)
         };
-        foreach (var arg in new[] { "--backend", backend, "--model", Path.Combine(SomningPaths.ModelsDir, EngineDefaults.ModelFile),
-            "--vad", Path.Combine(SomningPaths.ModelsDir, EngineDefaults.VadModelFile), "--flash-attn",
+        string model = backend == "cpu" ? EngineDefaults.CpuFallbackModelFile : EngineDefaults.ModelFile;
+        foreach (var arg in new[] { "--backend", backend, "--model", Path.Combine(modelsDir, model),
+            "--vad", Path.Combine(modelsDir, EngineDefaults.VadModelFile), "--flash-attn",
             EngineDefaults.FlashAttention ? "on" : "off", "--threads", EngineDefaults.Threads.ToString(),
             "--allowed-dir", SomningPaths.RecordingsDir }) info.ArgumentList.Add(arg);
         info.Environment["VK_LOADER_LAYERS_DISABLE"] = "~implicit~";
+        info.Environment.Remove("SOMNING_ENGINE_FAULT");
+        info.Environment.Remove("SOMNING_ENGINE_READY_DELAY_MS");
+        if (firstWorker && options.FirstWorkerEnvironment is not null)
+            foreach (var pair in options.FirstWorkerEnvironment) info.Environment[pair.Key] = pair.Value;
+        firstWorker = false;
+
+        var next = EngineProcess.Start(info);
+        worker = next;
+        next.MessageReceived += message => OnMessage(next, message);
         try
         {
-            process = Process.Start(info) ?? throw new IOException("Worker did not start.");
-            stdout = ReadOutputAsync(process); stderr = ReadErrorsAsync(process);
-            var startedSession = await ready.Task.WaitAsync(TimeSpan.FromSeconds(60), ct);
-            lock (lifecycle)
-            {
-                if (outputEnded || process.HasExited) throw new IOException("Worker exited during startup.");
-                session = startedSession; SetStatus(EngineStatus.Ready);
-            }
+            session = await next.ReadyTask.WaitAsync(options.EffectiveReadinessTimeout, ct);
+            if (next.Process.HasExited) throw new IOException("Worker exited during startup.");
+            SetStatus(EngineStatus.Ready);
+            _ = MonitorWorkerExitAsync(next);
         }
-        catch { SetStatus(EngineStatus.Failed); throw; }
+        catch
+        {
+            if (ReferenceEquals(worker, next)) worker = null;
+            await next.DisposeAsync();
+            throw;
+        }
     }
+
     public async Task<EngineTranscription> TranscribeAsync(string wavPath, CancellationToken ct)
     {
-        var current = session ?? throw new InvalidOperationException("Engine is not ready.");
+        long queuedAt = clock.NowMs;
+        if (Status == EngineStatus.Failed) return Failed("engine_failed");
+        await requestGate.WaitAsync(ct);
+        try
+        {
+            if (Status == EngineStatus.Failed) return Failed("engine_failed");
+            if (!await EnsureWorkerAvailableAsync(ct)) return Failed(disposing ? "shutdown" : "engine_failed");
+            for (int attempt = 0; attempt < 2; attempt++)
+            {
+                var current = worker;
+                var currentSession = session;
+                if (current is null || currentSession is null) return Failed("engine_failed");
+                var (result, queueMs) = await RunRequestAsync(current, wavPath, queuedAt, ct);
+                if (result is not null)
+                {
+                    if (result is ErrorMessage { Code: ErrorCodes.GpuError or ErrorCodes.BackendInitFailed })
+                    {
+                        bool recovered = await RestartAsync(current, "worker reported " + ((ErrorMessage)result).Code);
+                        if (attempt == 0 && recovered) continue;
+                        return Failed(recovered ? "engine_retry_failed" : "engine_failed");
+                    }
+                    return Map(result, currentSession, queueMs);
+                }
+                if (attempt == 0)
+                {
+                    bool recovered = await RestartAsync(current, "worker exited or request timed out");
+                    if (attempt == 0 && recovered) continue;
+                    return Failed(recovered ? "engine_retry_failed" : "engine_failed");
+                }
+                return Failed("engine_retry_failed");
+            }
+            return Failed("engine_retry_failed");
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (OperationCanceledException) when (disposing) { return Failed("shutdown"); }
+        catch (ObjectDisposedException) when (disposing) { return Failed("shutdown"); }
+        catch (Exception ex) when (ex is IOException or TimeoutException or InvalidOperationException or ObjectDisposedException)
+        {
+            Log.Warning(ex, "Engine request could not be completed");
+            return Failed("engine_retry_failed");
+        }
+        finally { requestGate.Release(); }
+    }
+
+    private async Task<bool> EnsureWorkerAvailableAsync(CancellationToken ct)
+    {
+        await startTask.WaitAsync(options.EffectiveReadinessTimeout, ct);
+        var elapsed = Stopwatch.StartNew();
+        while (true)
+        {
+            if (Status == EngineStatus.Ready && worker is not null && session is not null) return true;
+            if (Status == EngineStatus.Failed || disposing) return false;
+            Task? recovery;
+            lock (lifecycle) recovery = activeRecovery?.Task;
+            if (recovery is null) return Status == EngineStatus.Ready && worker is not null && session is not null;
+            TimeSpan remaining = options.EffectiveReadinessTimeout - elapsed.Elapsed;
+            if (remaining <= TimeSpan.Zero) throw new TimeoutException("Engine did not become ready before the timeout.");
+            await recovery.WaitAsync(remaining, ct);
+        }
+    }
+
+    private async Task<(EngineMessage? Message, long QueueMs)> RunRequestAsync(EngineProcess current, string wavPath, long queuedAt, CancellationToken ct)
+    {
         var id = Guid.NewGuid().ToString("N");
         var completion = new TaskCompletionSource<EngineMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
-        if (!pending.TryAdd(id, completion)) throw new InvalidOperationException("Duplicate request id.");
-        using var registration = ct.Register(() => _ = CancelAsync(id));
+        pending = completion;
+        pendingRequestId = id;
         try
         {
-            await SendAsync(new TranscribeRequest(id, wavPath), ct);
-            var response = await completion.Task.WaitAsync(TimeSpan.FromMinutes(5), ct);
-            return response switch
-            {
-                ResultMessage result => ProtocolMapping.Map(result, current),
-                ErrorMessage error => ProtocolMapping.Map(error, current),
-                _ => throw new InvalidDataException("Unexpected worker response.")
-            };
+            try { await SendAsync(current, new TranscribeRequest(id, wavPath), ct); }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)
+            { return (null, 0); }
+            long queueMs = QueueMs(queuedAt);
+            RequestWritten?.Invoke(wavPath);
+            double audioSeconds = Math.Max(0, new FileInfo(wavPath).Length - 44) / 32000d;
+            TimeSpan timeout = TimeSpan.FromSeconds(Math.Max(options.EffectiveMinRequestTimeout.TotalSeconds,
+                options.RequestTimeoutFactor * audioSeconds));
+            var winner = await Task.WhenAny(completion.Task, current.Exited, Task.Delay(timeout, ct));
+            if (winner == completion.Task) return (await completion.Task, queueMs);
+            if (winner == current.Exited) return (null, queueMs);
+            ct.ThrowIfCancellationRequested();
+            return (null, queueMs);
         }
-        finally { pending.TryRemove(id, out _); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            try { await SendAsync(current, new CancelRequest(id), CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(1)); }
+            catch (Exception ex) when (ex is IOException or TimeoutException or InvalidOperationException or ObjectDisposedException)
+            { Log.Debug("Worker cancellation unavailable"); }
+            throw;
+        }
+        finally { pending = null; pendingRequestId = null; }
     }
-    private async Task CancelAsync(string id)
+
+    private void OnMessage(EngineProcess source, EngineMessage message)
     {
-        try { await SendAsync(new CancelRequest(id), CancellationToken.None); }
-        catch (Exception ex) when (ex is IOException or InvalidOperationException or ObjectDisposedException)
-        { Log.Debug("Worker cancellation unavailable"); }
+        if (!ReferenceEquals(worker, source)) return;
+        if (message is ErrorMessage { Id: null, Code: not null } startupError)
+        {
+            // Model/backend startup errors are surfaced through readiness failure.
+            worker?.FailReady(new IOException("Engine initialization error: " + startupError.Code));
+            return;
+        }
+        var current = pending;
+        if (current is null) return;
+        string? id = message switch { ResultMessage result => result.Id, ErrorMessage { Id: not null } error => error.Id, _ => null };
+        if (id is not null && string.Equals(id, pendingRequestId, StringComparison.Ordinal)) current.TrySetResult(message);
     }
-    private async Task SendAsync(EngineMessage message, CancellationToken ct)
+
+    private async Task MonitorWorkerExitAsync(EngineProcess source)
     {
-        var child = process ?? throw new InvalidOperationException("Engine is not running.");
-        await writes.WaitAsync(ct);
+        await source.Exited;
+        if (disposing || !ReferenceEquals(worker, source) || Status != EngineStatus.Ready) return;
+        try { await RestartAsync(source, "worker process exited"); }
+        catch (OperationCanceledException) when (disposing) { }
+        catch (Exception ex) when (ex is IOException or TimeoutException or InvalidOperationException or ObjectDisposedException)
+        { Log.Warning(ex, "Background engine recovery failed"); SetStatus(EngineStatus.Failed); }
+    }
+
+    private async Task<bool> RestartAsync(EngineProcess failedWorker, string reason)
+    {
+        CancellationToken recoveryToken = lifetime.Token;
+        await restartGate.WaitAsync(recoveryToken);
+        TaskCompletionSource? recovery = null;
         try
         {
-            await child.StandardInput.WriteLineAsync(JsonLines.Serialize(message).AsMemory(), ct);
-            await child.StandardInput.FlushAsync(ct);
-        }
-        finally { writes.Release(); }
-    }
-    private async Task ReadOutputAsync(Process child)
-    {
-        try
-        {
-            while (await child.StandardOutput.ReadLineAsync() is { } line)
-            {
-                if (!JsonLines.TryDeserialize(line, out var message, out _))
-                { Log.Warning("Invalid worker protocol line"); continue; }
-                switch (message)
-                {
-                    case ReadyMessage r when r.Backend is "cpu" or "vulkan" && !string.IsNullOrWhiteSpace(r.Model)
-                        && double.IsFinite(r.LoadMs) && r.LoadMs >= 0 && double.IsFinite(r.WarmMs) && r.WarmMs >= 0:
-                        ready.TrySetResult(new(r.Backend, r.Model, (long)r.LoadMs, (long)r.WarmMs, r.GpuInUse, r.FlashAttention)); break;
-                    case ResultMessage r when !string.IsNullOrWhiteSpace(r.Id) && r.Text is not null
-                        && r.Outcome is "text" or "empty":
-                        if (pending.TryGetValue(r.Id, out var completion)) completion.TrySetResult(r);
-                        break;
-                    case ErrorMessage e when e.Id is not null && pending.TryGetValue(e.Id, out var errorCompletion):
-                        errorCompletion.TrySetResult(e); break;
-                    case ErrorMessage e when e.Id is null && !string.IsNullOrWhiteSpace(e.Code):
-                        ready.TrySetException(new IOException("Engine initialization error: " + e.Code)); break;
-                    default: Log.Warning("Unexpected or malformed worker response"); break;
-                }
-            }
-        }
-        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
-        { Log.Debug("Worker output reader ended"); }
-        finally
-        {
-            var error = new IOException("Engine exited before completing request.");
-            ready.TrySetException(error);
-            foreach (var request in pending.Values) request.TrySetException(error);
+            if (!ReferenceEquals(worker, failedWorker)) return Status == EngineStatus.Ready;
+            recovery = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             lock (lifecycle)
             {
-                outputEnded = true;
-                if (!disposing) SetStatus(EngineStatus.Failed);
+                activeRecovery = recovery;
+                SetStatus(EngineStatus.Restarting);
             }
+            var old = worker;
+            worker = null;
+            session = null;
+            if (old is not null) await old.DisposeAsync();
+            string backend = "cpu";
+            string failureReason = reason;
+            while (!disposing && !recoveryToken.IsCancellationRequested)
+            {
+                var decision = DecideRestart(backend, failureReason);
+                if (decision is RestartDecision.GiveUp)
+                {
+                    Log.Error("engine failed: restart cap reached");
+                    SetStatus(EngineStatus.Failed);
+                    return false;
+                }
+                var restart = (RestartDecision.Restart)decision;
+                if (!options.ZeroBackoff && restart.Delay > TimeSpan.Zero) await Task.Delay(restart.Delay, recoveryToken);
+                if (disposing || recoveryToken.IsCancellationRequested) return false;
+                backend = restart.Backend;
+                try
+                {
+                    await StartWorkerAsync(backend, recoveryToken, initial: false);
+                    return true;
+                }
+                catch (Exception ex) when (ex is IOException or TimeoutException or InvalidOperationException)
+                {
+                    Log.Warning(ex, "CPU worker restart failed");
+                    failureReason = ex.Message;
+                    old = worker;
+                    worker = null;
+                    session = null;
+                    if (old is not null) await old.DisposeAsync();
+                }
+            }
+            if (!disposing) SetStatus(EngineStatus.Failed);
+            return false;
         }
-    }
-    private static async Task ReadErrorsAsync(Process child)
-    {
-        try
+        finally
         {
-            while (await child.StandardError.ReadLineAsync() is { } line) Log.Debug("Worker native {NativeLog}", line);
+            if (recovery is not null)
+            {
+                lock (lifecycle)
+                {
+                    if (ReferenceEquals(activeRecovery, recovery)) activeRecovery = null;
+                    recovery.TrySetResult();
+                }
+            }
+            restartGate.Release();
         }
-        catch (Exception ex) when (ex is IOException or ObjectDisposedException) { Log.Debug("Worker diagnostics ended"); }
     }
+
+    private RestartDecision DecideRestart(string backend, string reason)
+    {
+        var (next, decision) = restartPolicy.OnFailure(clock.NowMs, backend, reason);
+        restartPolicy = next;
+        if (decision is RestartDecision.Restart) Interlocked.Increment(ref restartCount);
+        return decision;
+    }
+
+    private async Task SendAsync(EngineProcess target, EngineMessage message, CancellationToken ct)
+    {
+        await writes.WaitAsync(ct);
+        try { await target.SendAsync(message, ct); }
+        finally { writes.Release(); }
+    }
+
+    private long QueueMs(long queuedAt) => Math.Max(0, clock.NowMs - queuedAt);
+    private static EngineTranscription Map(EngineMessage message, EngineSessionInfo current, long queueMs) => message switch
+    {
+        ResultMessage result => ProtocolMapping.Map(result, current, queueMs),
+        ErrorMessage error => ProtocolMapping.Map(error, current) with { QueueMs = queueMs },
+        _ => Failed("engine_protocol_error")
+    };
+    private static EngineTranscription Failed(string code) => new("", "error", null, code, true, 0, 0, 0, 0, 0, 0, "cpu", "", 0);
+
     public async ValueTask DisposeAsync()
     {
         if (disposing) return;
         disposing = true;
-        var child = process;
-        if (child is null) return;
+        lifetime.Cancel();
+        var current = worker;
+        if (pending is { } request) request.TrySetResult(new ErrorMessage("shutdown", "shutdown", ""));
+        try { await startTask.WaitAsync(options.EffectiveShutdownTimeout); }
+        catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException or InvalidOperationException)
+        { Log.Debug("Engine startup ended during shutdown"); }
+        await restartGate.WaitAsync();
+        current = worker;
+        if (current is null) { restartGate.Release(); lifetime.Dispose(); return; }
         try
         {
-            if (!child.HasExited) await SendAsync(new ShutdownRequest(), CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(2));
-            await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            if (!current.Process.HasExited) await ShutdownWorkerAsync(current).WaitAsync(options.EffectiveShutdownTimeout);
         }
-        catch (Exception ex) when (ex is IOException or TimeoutException or InvalidOperationException)
-        { if (!child.HasExited) { child.Kill(entireProcessTree: true); await child.WaitForExitAsync(); } }
+        catch (Exception ex) when (ex is IOException or TimeoutException or InvalidOperationException or ObjectDisposedException)
+        { current.Kill(); try { await current.WaitForExitAsync(); } catch (InvalidOperationException) { } }
         finally
         {
-            await Task.WhenAll(stdout, stderr);
-            child.Dispose(); writes.Dispose();
+            await current.DisposeAsync();
+            worker = null;
+            restartGate.Release();
+            lifetime.Dispose();
         }
+    }
+
+    private async Task ShutdownWorkerAsync(EngineProcess current)
+    {
+        await SendAsync(current, new ShutdownRequest(), CancellationToken.None);
+        await current.WaitForExitAsync();
     }
 }

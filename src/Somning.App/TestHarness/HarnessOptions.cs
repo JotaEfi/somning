@@ -34,4 +34,16 @@ public sealed record HarnessOptions(string Fixture)
         return new HarnessOptions(full);
     }
 }
+
+/// <summary>The fixture used by the NEXT capture; swapped by the pipe's <c>set-fixture</c> command.</summary>
+public sealed class HarnessFixture(string path)
+{
+    private string current = path;
+
+    public string Path
+    {
+        get => Volatile.Read(ref current);
+        set => Volatile.Write(ref current, value ?? throw new ArgumentNullException(nameof(value)));
+    }
+}
 #endif

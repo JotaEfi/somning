@@ -13,6 +13,7 @@ if (args.Length > 0 && args[0] == "--transcribe-file")
     return await RunTranscribeFileAsync(args);
 
 Func<IAudioSource> audioSourceFactory = () => new WasapiAudioSource();
+Action<AppComposition, Action>? configure = null;
 #if SOMNING_TEST_HARNESS
 if (HarnessOptions.IsRequested(args))
 {
@@ -24,7 +25,11 @@ if (HarnessOptions.IsRequested(args))
         return 2;
     }
     // D-19: paced file audio instead of the microphone; a fresh source per capture (sources start once).
-    audioSourceFactory = () => new FileAudioSource(harness.Fixture, realTime: true);
+    // The pipe's set-fixture swaps the path used by the NEXT capture.
+    var fixture = new HarnessFixture(harness.Fixture);
+    audioSourceFactory = () => new FileAudioSource(fixture.Path, realTime: true);
+    var holdRecovery = Environment.GetEnvironmentVariable("SOMNING_TEST_HOLD_RECOVERY") == "1";
+    configure = (app, requestShutdown) => app.EnableHarness(fixture, requestShutdown, holdRecovery);
 }
 else if (args.Length > 0)
 {
@@ -45,10 +50,10 @@ if (args.Length > 0)
 }
 #endif
 
-return await RunDictationAsync(audioSourceFactory);
+return await RunDictationAsync(audioSourceFactory, configure);
 
-// Startup order (review H9): logging → loop + tick → keyboard hook → engine start in the background.
-static async Task<int> RunDictationAsync(Func<IAudioSource> audioSourceFactory)
+// Startup order (review H9): logging → harness pipe (Debug) → loop + tick → keyboard hook → engine start in the background.
+static async Task<int> RunDictationAsync(Func<IAudioSource> audioSourceFactory, Action<AppComposition, Action>? configure)
 {
     LoggingSetup.Initialize();
     using var shutdown = new CancellationTokenSource();
@@ -57,6 +62,7 @@ static async Task<int> RunDictationAsync(Func<IAudioSource> audioSourceFactory)
     try
     {
         await using var app = new AppComposition(audioSourceFactory);
+        configure?.Invoke(app, () => { try { shutdown.Cancel(); } catch (ObjectDisposedException) { } });
         app.StartLoop();
         app.Hook.Start(); // KeyboardHook installed BEFORE the engine StartAsync (below) is even called
         Log.Information("hook installed");

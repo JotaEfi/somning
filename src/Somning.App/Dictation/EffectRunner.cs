@@ -70,7 +70,7 @@ public sealed class EffectRunner : IAsyncDisposable
             case StartCapture start: BeginCapture(start.Id); break;
             case StopCapture stop: EndCapture(stop.Id); break;
             case Transcribe transcribe: Track(TranscribeAsync(transcribe.Id, transcribe.WavPath)); break;
-            case Deliver deliver: Track(DeliverAsync(deliver.Id, ct => output.DeliverAsync(deliver.Text, deliver.Target, ct))); break;
+            case Deliver deliver: Track(DeliverAsync(deliver.Id, ct => DeliverToTargetAsync(deliver, ct))); break;
             case CopyOnly copy: Track(DeliverAsync(copy.Id, ct => output.CopyOnlyAsync(copy.Text, ct))); break;
             case EmitMetrics emit:
                 MetricsLogger.Write(emit.Metrics);
@@ -237,6 +237,25 @@ public sealed class EffectRunner : IAsyncDisposable
         }
         finally { transcribing.TryRemove(fullPath, out _); }
         post(new TranscriptionCompleted(id, result, Environment.TickCount64));
+    }
+
+#if SOMNING_TEST_HARNESS
+    /// <summary>Harness-only delivery barrier (D-20): awaited asynchronously before TargetPaster; never in Release.</summary>
+    public Func<CancellationToken, Task>? BeforeDeliver { get; set; }
+
+    private async Task<DeliveryResult> BarrierThenDeliverAsync(Func<CancellationToken, Task> barrier, Deliver deliver, CancellationToken ct)
+    {
+        await barrier(ct).ConfigureAwait(false);
+        return await output.DeliverAsync(deliver.Text, deliver.Target, ct).ConfigureAwait(false);
+    }
+#endif
+
+    private Task<DeliveryResult> DeliverToTargetAsync(Deliver deliver, CancellationToken ct)
+    {
+#if SOMNING_TEST_HARNESS
+        if (BeforeDeliver is { } barrier) return BarrierThenDeliverAsync(barrier, deliver, ct);
+#endif
+        return output.DeliverAsync(deliver.Text, deliver.Target, ct);
     }
 
     private async Task DeliverAsync(string id, Func<CancellationToken, Task<DeliveryResult>> deliver)

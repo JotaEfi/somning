@@ -11,6 +11,9 @@ using Somning.Platform.Windows.Clipboard;
 using Somning.Platform.Windows.Hook;
 using Somning.Platform.Windows.Paste;
 using Somning.Platform.Windows.Recording;
+#if SOMNING_TEST_HARNESS
+using Somning.App.TestHarness;
+#endif
 
 namespace Somning.App.Composition;
 
@@ -49,6 +52,31 @@ public sealed class AppComposition : IAsyncDisposable
     public DictationHost Host { get; }
     public EffectRunner Runner { get; }
     public SidecarStore Sidecars { get; }
+
+#if SOMNING_TEST_HARNESS
+    public HarnessJournal? Journal { get; private set; }
+    public HarnessPipeServer? Pipe { get; private set; }
+
+    /// <summary>Gate that delays startup recovery processing (armed only when a test asks for it).</summary>
+    public HarnessGate RecoveryGate { get; } = new();
+
+    /// <summary>
+    /// Debug-only (D-20): the journal subscribes to Host.Notified BEFORE the loop starts so no milestone is missed,
+    /// the delivery barrier is wired into the EffectRunner, and the pipe server starts listening. Call before StartLoop.
+    /// </summary>
+    public void EnableHarness(HarnessFixture fixture, Action requestShutdown, bool holdRecovery)
+    {
+        if (Journal is not null) throw new InvalidOperationException("Harness already enabled.");
+        Journal = new HarnessJournal();
+        Journal.Attach(Host);
+        var deliveryBarrier = new HarnessGate();
+        Runner.BeforeDeliver = deliveryBarrier.WaitIfArmedAsync;
+        if (holdRecovery) RecoveryGate.Arm();
+        Pipe = new HarnessPipeServer(Journal, new HarnessStatusSource(() => Engine.Status.ToString(), () => Host.State),
+            fixture, deliveryBarrier, RecoveryGate, requestShutdown);
+        Pipe.Start();
+    }
+#endif
 
     /// <summary>Starts the single-writer loop, its 50 ms tick and the hook pump (the hook itself is started by Program).</summary>
     public void StartLoop() => Host.Start(Runner.Run, keys.Reader);
@@ -97,6 +125,9 @@ public sealed class AppComposition : IAsyncDisposable
     {
         if (lifetime.IsCancellationRequested) return;
         lifetime.Cancel();
+#if SOMNING_TEST_HARNESS
+        if (Pipe is not null) await Pipe.DisposeAsync().ConfigureAwait(false);
+#endif
         Hook.Dispose();
         await Host.DisposeAsync().ConfigureAwait(false);
         await Runner.DisposeAsync().ConfigureAwait(false);

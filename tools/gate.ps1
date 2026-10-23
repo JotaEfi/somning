@@ -1,6 +1,7 @@
 param(
     [string]$ModelsDir = (Join-Path $env:LOCALAPPDATA 'Somning\models'),
-    [switch]$App
+    [switch]$App,
+    [switch]$SkipEngine
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -41,11 +42,18 @@ function Quote-Argument([string]$Value) {
     return '"' + $Value + '"'
 }
 try {
-    Push-Location $root
-    try {
-        & dotnet publish src/Somning.Engine -c Release -r win-x64 --self-contained -o publish/engine
-        if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed ($LASTEXITCODE)" }
-    } finally { Pop-Location }
+    if ($SkipEngine) {
+        $priorGate = if (Test-Path -LiteralPath $report) { [IO.File]::ReadAllText($report, $utf8) } else { '' }
+        if (-not ($priorGate -match '(?m)^\| vulkan \|.*\| PASS \|' -and $priorGate -match '(?m)^\| cpu \|.*\| PASS \|')) {
+            throw '-SkipEngine requires a prior engine gate report with Vulkan and CPU results'
+        }
+    } else {
+        Push-Location $root
+        try {
+            & dotnet publish src/Somning.Engine -c Release -r win-x64 --self-contained -o publish/engine
+            if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed ($LASTEXITCODE)" }
+        } finally { Pop-Location }
+    }
     # A unique child prevents stale files or concurrent runs contaminating the deployed layout.
     $stage = Join-Path $env:TEMP ('somning-gate\' + [guid]::NewGuid().ToString('N'))
     $engine = Join-Path $stage 'engine'; $audio = Join-Path $stage 'in'
@@ -53,7 +61,8 @@ try {
     Copy-Item -Path (Join-Path $root 'publish\engine\*') -Destination $engine -Recurse -Force
     Copy-Item -LiteralPath (Join-Path $root 'tests\fixtures\tracer\hoje.wav') -Destination (Join-Path $audio 'hoje.wav')
     $expected = [IO.File]::ReadAllText((Join-Path $root 'tests\fixtures\tracer\hoje.txt'), $utf8)
-    foreach ($backend in @('vulkan','cpu')) {
+    $engineBackends = if ($SkipEngine) { @() } else { @('vulkan','cpu') }
+    foreach ($backend in $engineBackends) {
         $p = $null; $writer = $null
         try {
             $info = New-Object Diagnostics.ProcessStartInfo
@@ -206,7 +215,9 @@ $lines = @('# Windows 10 published engine gate', '',
     'Deployment prerequisites: natives import MSVCP140, VCRUNTIME140, VCRUNTIME140_1, VCOMP140 and vulkan-1.dll from System32. Phase 4 must ship the VC++ redistributable; the installed GPU driver supplies Vulkan.',
     'The transcript is an explicit regression fixture, retained here as gate evidence; operational logs exclude transcript text.')
 if ($failed) { $lines += ''; $lines += 'D-16 re-check failed: execution stops; insert a native-rebuild phase' }
-if ($App) { $lines += $appSection }
+if ($SkipEngine) {
+    $lines = @([IO.File]::ReadAllLines($report, $utf8)) + $appSection
+} elseif ($App) { $lines += $appSection }
 [IO.File]::WriteAllLines($report, [string[]]$lines, $utf8)
 if ($failed) { Write-Host 'GATE FAIL'; exit 1 }
 exit 0

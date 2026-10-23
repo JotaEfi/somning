@@ -1,0 +1,20 @@
+{
+  "selected": "vulkan-ggml-large-v3-turbo-q5_0.bin-fa=True",
+  "samples_ms": [
+    1640,
+    1547,
+    1578,
+    1625,
+    1546,
+    1531,
+    1531,
+    1657,
+    1594,
+    1562
+  ],
+  "p50_ms": 1562,
+  "p95_ms": 1657,
+  "budget_ms": 3000,
+  "backend": "vulkan",
+  "measured_at_utc": "2026-10-23T10:56:17.2413644+00:00"
+}

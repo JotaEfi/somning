@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using System.Runtime.InteropServices;
 using Somning.Core.Trigger;
 using Somning.Platform.Windows.Input;
 using Windows.Win32;
@@ -7,10 +8,15 @@ using Windows.Win32.UI.WindowsAndMessaging;
 namespace Somning.Platform.Windows.Hook;
 public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposable
 {
+    private const uint LayoutRestoreMessage = 0x8000 + 0x31;
+    private const uint LayoutVerifyMessage = 0x8000 + 0x32;
     private readonly TaskCompletionSource ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Thread? thread;
     private uint threadId;
     private ChordTracker tracker;
+    private uint targetLayoutThreadId;
+    private nint targetLayoutWindow;
+    private nint layoutBeforeChord;
     private int disposed;
     private HOOKPROC? rootedCallback;
     public void Start()
@@ -32,7 +38,11 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
             if (hook.IsInvalid) throw new InvalidOperationException("Unable to install keyboard hook.");
             ready.TrySetResult();
             while ((int)PInvoke.GetMessage(out var message, default, 0, 0) > 0)
-            { PInvoke.TranslateMessage(in message); PInvoke.DispatchMessage(in message); }
+            {
+                if ((uint)message.message == LayoutRestoreMessage) QueueLayoutVerification();
+                else if ((uint)message.message == LayoutVerifyMessage) RestoreHotkeyLayout();
+                else { PInvoke.TranslateMessage(in message); PInvoke.DispatchMessage(in message); }
+            }
         }
         catch (Exception ex) { ready.TrySetException(ex); }
         finally { sink.TryComplete(); }
@@ -41,17 +51,56 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
     {
         if (code < 0) return PInvoke.CallNextHookEx((HHOOK)default, code, wparam, lparam);
         var data = (KBDLLHOOKSTRUCT*)lparam.Value;
-        if (data->dwExtraInfo == InputMarkers.Paste)
+        if (data->dwExtraInfo == InputMarkers.Paste || data->dwExtraInfo == InputMarkers.Mask)
             return PInvoke.CallNextHookEx((HHOOK)default, code, wparam, lparam);
         bool down = wparam.Value is 0x100 or 0x104;
         bool up = wparam.Value is 0x101 or 0x105;
         if ((down || up) && tracker.Process(data->vkCode, down, out var kind))
         {
+            if (kind == KeyEventKind.TriggerDown)
+            {
+                var foreground = GetForegroundWindow();
+                targetLayoutWindow = foreground;
+                targetLayoutThreadId = foreground == 0 ? 0 : GetWindowThreadProcessId(foreground, out _);
+                layoutBeforeChord = targetLayoutThreadId == 0 ? 0 : GetKeyboardLayout(targetLayoutThreadId);
+            }
             sink.TryWrite(new KeyEvent(kind, Environment.TickCount64, data->dwExtraInfo == InputMarkers.Test));
+            if (kind == KeyEventKind.TriggerUp)
+                _ = PInvoke.PostThreadMessage(threadId, LayoutRestoreMessage, default, default);
             return new LRESULT(1);
         }
         return PInvoke.CallNextHookEx((HHOOK)default, code, wparam, lparam);
     }
+
+    /// <summary>
+    /// Ctrl+Shift+Space can activate Windows' Ctrl+Shift input-language shortcut on key release. Delay the check
+    /// outside the hook thread so all remaining key-up callbacks drain first, then post a request for the captured
+    /// HKL to the original foreground window. This restores the exact layout even when more than two are installed.
+    /// </summary>
+    private void QueueLayoutVerification()
+    {
+        var hookThread = threadId;
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            Thread.Sleep(100);
+            _ = PInvoke.PostThreadMessage(hookThread, LayoutVerifyMessage, default, default);
+        });
+    }
+
+    private void RestoreHotkeyLayout()
+    {
+        if (targetLayoutWindow == 0 || targetLayoutThreadId == 0 || layoutBeforeChord == 0 ||
+            GetKeyboardLayout(targetLayoutThreadId) == layoutBeforeChord) return;
+        // Explicitly request the saved HKL. Replaying Ctrl+Shift only reverses a two-layout cycle and can
+        // advance to a third layout on machines with more than two installed layouts.
+        _ = PostMessage(targetLayoutWindow, WmInputLangChangeRequest, 0, layoutBeforeChord);
+    }
+
+    private const uint WmInputLangChangeRequest = 0x0050;
+    [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint window, out uint processId);
+    [DllImport("user32.dll")] private static extern nint GetKeyboardLayout(uint threadId);
+    [DllImport("user32.dll", EntryPoint = "PostMessageW")] private static extern bool PostMessage(nint window, uint message, nint wParam, nint lParam);
     public void Dispose()
     {
         if (Interlocked.Exchange(ref disposed, 1) != 0) return;

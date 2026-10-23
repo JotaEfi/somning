@@ -138,14 +138,18 @@ public sealed class AppComposition : IAsyncDisposable
 
     /// <summary>
     /// The supervisor strips fault-injection variables from the inherited environment, so a harness run forwards
-    /// SOMNING_ENGINE_READY_DELAY_MS explicitly to the first worker (Debug only; Release workers never see it).
+    /// SOMNING_ENGINE_READY_DELAY_MS / SOMNING_ENGINE_FAULT explicitly to the first worker (Debug only; Release workers never see it).
     /// </summary>
     private static SupervisorOptions SupervisorOptionsForHost()
     {
 #if SOMNING_TEST_HARNESS
+        var firstWorkerEnvironment = new Dictionary<string, string>();
         var delay = Environment.GetEnvironmentVariable("SOMNING_ENGINE_READY_DELAY_MS");
-        if (!string.IsNullOrEmpty(delay))
-            return new SupervisorOptions(FirstWorkerEnvironment: new Dictionary<string, string> { ["SOMNING_ENGINE_READY_DELAY_MS"] = delay });
+        var fault = Environment.GetEnvironmentVariable("SOMNING_ENGINE_FAULT");
+        if (!string.IsNullOrEmpty(delay)) firstWorkerEnvironment["SOMNING_ENGINE_READY_DELAY_MS"] = delay;
+        if (!string.IsNullOrEmpty(fault)) firstWorkerEnvironment["SOMNING_ENGINE_FAULT"] = fault;
+        if (firstWorkerEnvironment.Count > 0)
+            return new SupervisorOptions(FirstWorkerEnvironment: firstWorkerEnvironment);
 #endif
         return new SupervisorOptions();
     }

@@ -24,3 +24,26 @@
   never appeared. Likely suspects: foreground or modifier state left behind by an earlier desktop test. Plan
   01-12/01-13 E2E work should log the dictation outcome/reason in the assertion message and re-check this under
   repeated full-suite runs.
+
+## From plan 01-11
+
+- **`queue_ms` does not include the App-side wait for engine readiness.** `EngineSupervisor` measures `queue_ms`
+  from its own `TranscribeAsync` call to the request write. The reducer only dispatches `Transcribe` after
+  `EngineReady` (and after recovery admission), so a dictation captured during model load reports `queue_ms` of
+  about 0 ms even though it waited around 10 s. The wait does show up in `stop_to_paste_ms`.
+  `StartupBeforeReadyTests` therefore asserts `stop_to_paste_ms` against the observed Starting window instead of
+  the plan's `queue_ms > 0`, which held only about 1 run in 2. If APP-06/D-23 means queue time to cover the FIFO
+  wait, the reducer needs an enqueue timestamp, with queue_ms computed as dispatch time minus that timestamp. This
+  is a metrics-definition decision for the 01-12/01-13 measurement work.
+- **`TargetPasterTests.Focus_change_inside_same_top_level_window_defers` failed deterministically in the full suite**
+  ("could not acquire two-edit test foreground") once the new 01-11 classes changed xUnit's collection shuffle
+  (seed 610002936). It runs right after `Foreground_changed_defers_and_leaves_text_on_clipboard` closes two
+  Notepads, and Windows briefly refused the foreground change. Fixed in test support: `ForegroundHelper.EnsureForeground`
+  now retries its acquisition sequence for up to 1 s. The full suite with the same seed is green afterwards.
+- **`RecoveryServiceTests.Early_captures_during_delayed_recovery_are_admitted_once`: one intermittent lost first
+  paste in a full-suite run (seed 610002936).** Both live outcomes were `pasted`, but Notepad held only the second
+  text ("First live text: ''"). It passed in every isolated or class-level run (6+) and in the next full run
+  with the same seed. It is not diagnosed. Suspects: Notepad not processing the first injected Ctrl+V
+  (e.g. its OpenClipboard racing the next clipboard write), or a focus/caret effect from earlier desktop tests.
+  The assertion now prints the Notepad text, clipboard, every outcome's metrics and the App log. 01-12/01-13
+  should capture that evidence under repeated full-suite runs. Same family as the 01-10 TapTap intermittent.

@@ -1,0 +1,12 @@
+# Deferred Items — Phase 01
+
+## From plan 01-09 (out of scope, pre-existing)
+
+- **HoldWatchdogTests fail deterministically (2 tests)** — `Held_chord_3500ms_is_not_cut` and
+  `Lost_trigger_up_is_caught_by_modifier_watchdog` throw `InvalidOperationException` from
+  `PeriodicTimer.WaitForNextTickAsync` in `tests/Somning.Integration.Tests/Support/HookTriggerLoop.cs:35`.
+  Cause: when a key event wins `Task.WhenAny`, the outstanding tick wait is abandoned and the next loop
+  iteration calls `WaitForNextTickAsync` again while the previous wait is still pending (PeriodicTimer allows
+  only one waiter). Reproduced identically on base commit `cdfdd38` (before any 01-09 change), so not caused
+  by 01-09. Fix: keep the pending timer task across iterations and only re-arm it after it completes.
+  Plan 01-10's DictationHost must not copy this pattern for its own 50 ms Tick task.

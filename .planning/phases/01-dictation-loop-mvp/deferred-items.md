@@ -14,3 +14,13 @@
   **Resolved after 01-09** (`fix(01-09)` commit): `HookTriggerLoop` now keeps both pending waits (timer tick and
   channel read) across iterations and re-arms each only after it completes. The abandoned `ReadAsync` could also
   swallow a key event, so both were fixed. Integration suite: 67/67 green.
+
+## From plan 01-10
+
+- **HarnessDictationTests intermittent failure in one full-suite run.** `TapTap_pastes_fixture_into_notepad`
+  failed once (31 s) in the first full `Somning.Integration.Tests` run (73/74). It passed in the next full run
+  (74/74) and in 5 isolated runs. The failure message was not captured (the output was filtered). The 31 s
+  duration matches the 20 s paste poll running out, so either nothing was pasted or the dictation metrics line
+  never appeared. Likely suspects: foreground or modifier state left behind by an earlier desktop test. Plan
+  01-12/01-13 E2E work should log the dictation outcome/reason in the assertion message and re-check this under
+  repeated full-suite runs.

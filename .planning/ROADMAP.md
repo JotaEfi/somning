@@ -7,7 +7,7 @@ Somning goes from a headless, agent-verifiable dictation loop (hotkey, mic, loca
 ## Phases
 
 - [x] **Phase 1: Dictation Loop MVP** - Headless end-to-end: hotkey to mic to local Whisper pt-BR to clipboard and auto-paste, gated by a Win10 published-build inference benchmark
-- [ ] **Phase 2: Overlay, Tray, Settings & Cancel** - Daily-usable shell: waveform pill, tray, persisted settings, Esc cancel, first-run model download
+- [x] **Phase 2: Overlay, Tray, Settings & Cancel** - Daily-usable shell: waveform pill, tray, persisted settings, Esc cancel, first-run model download
 - [ ] **Phase 3: Cloud Engine** - Opt-in Groq/OpenAI transcription with explicit errors and recoverable recordings
 - [ ] **Phase 4: Packaging, Autostart & Hardening** - Per-user installer, start-with-Windows, sleep/resume and soak resilience
 

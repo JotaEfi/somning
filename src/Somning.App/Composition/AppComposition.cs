@@ -35,7 +35,7 @@ public sealed class AppComposition : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(audioSourceFactory);
         Directory.CreateDirectory(SomningPaths.RecordingsDir);
         Directory.CreateDirectory(SomningPaths.LogsDir);
-        Engine = new EngineSupervisor();
+        Engine = new EngineSupervisor(options: SupervisorOptionsForHost());
         clipboard = new ClipboardWriter();
         var integrity = new IntegrityReader();
         var probe = new ForegroundProbe(integrity);
@@ -134,6 +134,20 @@ public sealed class AppComposition : IAsyncDisposable
         {
             Log.Error(ex, "engine failed to start");
         }
+    }
+
+    /// <summary>
+    /// The supervisor strips fault-injection variables from the inherited environment, so a harness run forwards
+    /// SOMNING_ENGINE_READY_DELAY_MS explicitly to the first worker (Debug only; Release workers never see it).
+    /// </summary>
+    private static SupervisorOptions SupervisorOptionsForHost()
+    {
+#if SOMNING_TEST_HARNESS
+        var delay = Environment.GetEnvironmentVariable("SOMNING_ENGINE_READY_DELAY_MS");
+        if (!string.IsNullOrEmpty(delay))
+            return new SupervisorOptions(FirstWorkerEnvironment: new Dictionary<string, string> { ["SOMNING_ENGINE_READY_DELAY_MS"] = delay });
+#endif
+        return new SupervisorOptions();
     }
 
     private static void OnNotified(DictationNotification notification) =>

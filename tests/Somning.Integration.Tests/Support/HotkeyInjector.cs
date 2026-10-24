@@ -19,6 +19,11 @@ public static class HotkeyInjector
         if (sent != inputs.Length)
         {
             var err = System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+            if (err == 5)
+            {
+                Requires.That(false, "SendInput access denied (UIPI / non-foreground interactive window).");
+                return;
+            }
             throw new IOException($"SendInput incomplete: sent {sent} of {inputs.Length}, error={err}");
         }
     }
@@ -33,6 +38,16 @@ public static class HotkeyInjector
     public static void PasteChord() => Send([Input(VIRTUAL_KEY.VK_CONTROL, true, InputMarkers.Paste),
         Input(VIRTUAL_KEY.VK_V, true, InputMarkers.Paste), Input(VIRTUAL_KEY.VK_V, false, InputMarkers.Paste),
         Input(VIRTUAL_KEY.VK_CONTROL, false, InputMarkers.Paste)]);
-    public static void ReleaseAll() => Send([Input(VIRTUAL_KEY.VK_SPACE, false, InputMarkers.Test),
-        Input(VIRTUAL_KEY.VK_SHIFT, false, InputMarkers.Test), Input(VIRTUAL_KEY.VK_CONTROL, false, InputMarkers.Test)]);
+    public static void ReleaseAll()
+    {
+        try
+        {
+            Send([Input(VIRTUAL_KEY.VK_SPACE, false, InputMarkers.Test),
+                Input(VIRTUAL_KEY.VK_SHIFT, false, InputMarkers.Test), Input(VIRTUAL_KEY.VK_CONTROL, false, InputMarkers.Test)]);
+        }
+        catch (Exception)
+        {
+            // Ignore teardown release failures
+        }
+    }
 }

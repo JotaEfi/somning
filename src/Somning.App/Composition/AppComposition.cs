@@ -20,6 +20,7 @@ using Somning.Platform.Windows.Clipboard;
 using Somning.Platform.Windows.Hook;
 using Somning.Platform.Windows.Overlay;
 using Somning.Platform.Windows.Paste;
+using Somning.Platform.Windows.Power;
 using Somning.Platform.Windows.Recording;
 using Somning.Platform.Windows.Settings;
 using Somning.Platform.Windows.Tray;
@@ -44,13 +45,14 @@ public sealed class AppComposition : IAsyncDisposable
     private Task recovery = Task.CompletedTask;
     private Action? shutdownCallback;
 
-    public AppComposition(Func<IAudioSource> audioSourceFactory, ISettingsStore? settingsStore = null, DynamicAudioSourceFactory? dynamicAudio = null, IAutostartManager? autostartManager = null)
+    public AppComposition(Func<IAudioSource> audioSourceFactory, ISettingsStore? settingsStore = null, DynamicAudioSourceFactory? dynamicAudio = null, IAutostartManager? autostartManager = null, PowerSessionListener? powerListener = null)
     {
         ArgumentNullException.ThrowIfNull(audioSourceFactory);
         Directory.CreateDirectory(SomningPaths.RecordingsDir);
         Directory.CreateDirectory(SomningPaths.LogsDir);
         DynamicAudioFactory = dynamicAudio;
         AutostartManager = autostartManager ?? new RegistryAutostartManager();
+        PowerListener = powerListener ?? TryCreatePowerListener();
         SettingsStore = settingsStore ?? new JsonSettingsStore();
         Settings = SettingsStore.LoadAsync().GetAwaiter().GetResult();
         AutoPasteEnabled = Settings.AutoPaste;
@@ -79,6 +81,15 @@ public sealed class AppComposition : IAsyncDisposable
         Engine.RequestWritten += Runner.OnRequestWritten;
         Engine.StatusChanged += status => Host.Post(new EngineStatusChanged(status));
         Host.Notified += OnNotified;
+
+        // DIST-03: a sleep/resume or lock/unlock cycle can silently drop the low-level hook.
+        if (PowerListener is not null)
+        {
+            PowerListener.Suspended += OnSystemSuspended;
+            PowerListener.Resumed += OnSystemResumed;
+            PowerListener.SessionLocked += OnSessionLocked;
+            PowerListener.SessionUnlocked += OnSessionUnlocked;
+        }
     }
 
     public EngineSupervisor Engine { get; }
@@ -95,6 +106,7 @@ public sealed class AppComposition : IAsyncDisposable
     public bool AutoPasteEnabled { get; set; } = true;
     public ISettingsStore SettingsStore { get; }
     public IAutostartManager AutostartManager { get; }
+    public PowerSessionListener? PowerListener { get; }
     public UserSettings Settings { get; private set; }
     public DynamicAudioSourceFactory? DynamicAudioFactory { get; }
     public IOverlayView? Overlay { get; private set; }
@@ -309,6 +321,37 @@ public sealed class AppComposition : IAsyncDisposable
     private static void OnNotified(DictationNotification notification) =>
         Log.Debug("notification {Kind} {Id}", notification.Kind, notification.Id);
 
+    private static PowerSessionListener? TryCreatePowerListener()
+    {
+        try { return new PowerSessionListener(); }
+        catch (Exception ex)
+        {
+            // Power/session notifications are an enhancement: never block startup on them.
+            Log.Warning(ex, "Power/session listener unavailable");
+            return null;
+        }
+    }
+
+    private static void OnSystemSuspended() =>
+        Log.Information("System suspending; interrupted captures will be recovered");
+
+    private void OnSystemResumed() => ReinstallHookAfterWake("System resumed from sleep");
+
+    private static void OnSessionLocked() => Log.Information("Session locked");
+
+    private void OnSessionUnlocked() => ReinstallHookAfterWake("Session unlocked");
+
+    /// <summary>
+    /// DIST-03: Windows may drop WH_KEYBOARD_LL across power transitions; reinstall it on the hook thread.
+    /// Events can arrive before Program calls Hook.Start(), so a failed reinstall is logged, not thrown.
+    /// </summary>
+    private void ReinstallHookAfterWake(string reason)
+    {
+        Log.Information("{Reason}; reinstalling keyboard hook", reason);
+        try { Hook.Reinstall(); }
+        catch (Exception ex) { Log.Warning(ex, "Keyboard hook reinstall failed after {Reason}", reason); }
+    }
+
     private static bool IdTaken(string id) =>
         File.Exists(Path.Combine(SomningPaths.RecordingsDir, id + ".wav"))
         || File.Exists(Path.Combine(SomningPaths.RecordingsDir, id + ".json"));
@@ -323,6 +366,7 @@ public sealed class AppComposition : IAsyncDisposable
         SettingsWindow?.Dispose();
         Overlay?.Dispose();
         Tray?.Dispose();
+        PowerListener?.Dispose();
         Hook.Dispose();
         try { await recovery.ConfigureAwait(false); }
         catch (Exception ex) { Log.Debug(ex, "Recovery ended during shutdown"); }

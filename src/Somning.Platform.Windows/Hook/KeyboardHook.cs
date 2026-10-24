@@ -12,6 +12,10 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
 {
     private const uint LayoutRestoreMessage = 0x8000 + 0x31;
     private const uint LayoutVerifyMessage = 0x8000 + 0x32;
+    private const uint ReinstallHookMessage = 0x8000 + 0x33;
+    private int hookActive;
+    private nint hookHandle;
+    private int installCount;
     private readonly TaskCompletionSource ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Thread? thread;
     private uint threadId;
@@ -24,6 +28,24 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
 
     /// <summary>HOTK-04: Predicate returning whether dictation recording is actively in progress.</summary>
     public Func<bool>? IsRecordingActive { get; set; }
+
+    // Indicates local installation state; Windows can silently remove a low-level hook.
+    public bool IsHookActive => Volatile.Read(ref hookActive) != 0;
+
+    /// <summary>Test observability: native handle of the currently installed hook (0 before Start).</summary>
+    internal nint HookHandle => Volatile.Read(ref hookHandle);
+
+    /// <summary>Test observability: number of successful hook installations, including reinstalls.</summary>
+    internal int InstallCount => Volatile.Read(ref installCount);
+
+    public void Reinstall()
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+        if (!ready.Task.IsCompletedSuccessfully)
+            throw new InvalidOperationException("Hook has not started.");
+        if (!PInvoke.PostThreadMessage(threadId, ReinstallHookMessage, default, default))
+            throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+    }
 
     public void Start()
     {
@@ -41,17 +63,40 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
         {
             threadId = PInvoke.GetCurrentThreadId();
             PInvoke.PeekMessage(out _, default, 0, 0, PEEK_MESSAGE_REMOVE_TYPE.PM_NOREMOVE);
-            using var hook = PInvoke.SetWindowsHookEx(WINDOWS_HOOK_ID.WH_KEYBOARD_LL, rootedCallback!, null, 0);
-            if (hook.IsInvalid) throw new InvalidOperationException("Unable to install keyboard hook.");
-            ready.TrySetResult();
-            while ((int)PInvoke.GetMessage(out var message, default, 0, 0) > 0)
+            var hook = PInvoke.SetWindowsHookEx(WINDOWS_HOOK_ID.WH_KEYBOARD_LL, rootedCallback!, null, 0);
+            try
             {
-                if ((uint)message.message == LayoutRestoreMessage) QueueLayoutVerification();
-                else if ((uint)message.message == LayoutVerifyMessage) RestoreHotkeyLayout();
-                else { PInvoke.TranslateMessage(in message); PInvoke.DispatchMessage(in message); }
+                if (hook.IsInvalid) throw new InvalidOperationException("Unable to install keyboard hook.");
+                hookHandle = hook.DangerousGetHandle();
+                _ = Interlocked.Increment(ref installCount);
+                Volatile.Write(ref hookActive, 1);
+                ready.TrySetResult();
+                while ((int)PInvoke.GetMessage(out var message, default, 0, 0) > 0)
+                {
+                    if ((uint)message.message == ReinstallHookMessage)
+                    {
+                        Volatile.Write(ref hookActive, 0);
+                        hook.Dispose(); // SafeHandle releases via UnhookWindowsHookEx on this thread.
+                        tracker = default;
+                        hook = PInvoke.SetWindowsHookEx(WINDOWS_HOOK_ID.WH_KEYBOARD_LL, rootedCallback!, null, 0);
+                        if (hook.IsInvalid) throw new InvalidOperationException("Unable to reinstall keyboard hook.");
+                        hookHandle = hook.DangerousGetHandle();
+                        _ = Interlocked.Increment(ref installCount);
+                        Volatile.Write(ref hookActive, 1);
+                    }
+                    else if ((uint)message.message == LayoutRestoreMessage) QueueLayoutVerification();
+                    else if ((uint)message.message == LayoutVerifyMessage) RestoreHotkeyLayout();
+                    else { PInvoke.TranslateMessage(in message); PInvoke.DispatchMessage(in message); }
+                }
             }
+            finally { Volatile.Write(ref hookActive, 0); hook.Dispose(); }
         }
-        catch (Exception ex) { ready.TrySetException(ex); }
+        catch (Exception ex)
+        {
+            ready.TrySetException(ex);
+            sink.TryComplete(ex);
+            System.Diagnostics.Trace.TraceError("Keyboard hook thread failed: {0}", ex);
+        }
         finally { sink.TryComplete(); }
     }
 

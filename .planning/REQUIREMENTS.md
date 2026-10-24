@@ -61,7 +61,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [ ] **DIST-01**: User can install Somning via a per-user Windows installer that works on a clean Windows 10 machine without dev tools
 - [x] **DIST-02**: User can enable start-with-Windows (starts minimized to tray)
-- [ ] **DIST-03**: App keeps working after sleep/resume, lock/unlock and long uptime (hook watchdog/reinstall)
+- [x] **DIST-03**: App keeps working after sleep/resume, lock/unlock and long uptime (hook watchdog/reinstall)
 
 ## v2 Requirements
 

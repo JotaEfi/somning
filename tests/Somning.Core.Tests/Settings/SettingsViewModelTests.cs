@@ -15,6 +15,7 @@ public sealed class SettingsViewModelTests
             MicrophoneDeviceId = "endpoint-1",
             AutoPaste = false,
             PlaySoundCues = true,
+            StartWithWindows = true,
             CustomVocabulary = "Kubernetes, Docker",
             CloudProvider = "groq"
         };
@@ -24,6 +25,7 @@ public sealed class SettingsViewModelTests
         Assert.Equal("endpoint-1", vm.SelectedDeviceId);
         Assert.False(vm.AutoPaste);
         Assert.True(vm.PlaySoundCues);
+        Assert.True(vm.StartWithWindows);
         Assert.Equal("Kubernetes, Docker", vm.CustomVocabulary);
         Assert.Equal("groq", vm.CloudProvider);
         Assert.Null(vm.ConflictWarning);
@@ -51,6 +53,7 @@ public sealed class SettingsViewModelTests
             SelectedDeviceId = "mic-usb",
             AutoPaste = false,
             PlaySoundCues = true,
+            StartWithWindows = true,
             CustomVocabulary = "  Termo Especial  ",
             CloudProvider = "openai"
         };
@@ -60,8 +63,23 @@ public sealed class SettingsViewModelTests
         Assert.Equal("mic-usb", updated.MicrophoneDeviceId);
         Assert.False(updated.AutoPaste);
         Assert.True(updated.PlaySoundCues);
+        Assert.True(updated.StartWithWindows);
         Assert.Equal("Termo Especial", updated.CustomVocabulary);
         Assert.Equal("openai", updated.CloudProvider);
         Assert.Equal("dpapi-cipher", updated.EncryptedApiKey);
+    }
+
+    [Fact]
+    public void StartWithWindows_DefaultsToFalseAndRoundTripsThroughBuild()
+    {
+        var vm = new SettingsViewModel(new UserSettings());
+        Assert.False(vm.StartWithWindows);
+        Assert.False(vm.BuildUpdatedSettings().StartWithWindows);
+
+        vm.StartWithWindows = true;
+
+        Assert.True(vm.BuildUpdatedSettings().StartWithWindows);
+        // The initial settings are immutable and left untouched.
+        Assert.False(vm.CurrentSettings.StartWithWindows);
     }
 }

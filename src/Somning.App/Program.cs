@@ -13,6 +13,10 @@ using Somning.App.TestHarness;
 if (args.Length > 0 && args[0] == "--transcribe-file")
     return await RunTranscribeFileAsync(args);
 
+// DIST-02: the autostart entry launches the app with --tray (--minimized is accepted as an alias).
+// Both flags select the default tray flow below, so they must not be reported as unknown arguments.
+args = Array.FindAll(args, arg => arg is not ("--tray" or "--minimized"));
+
 #if SOMNING_TEST_HARNESS
 var skipSingleInstance = HarnessOptions.IsRequested(args);
 #else

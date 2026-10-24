@@ -12,6 +12,7 @@ public sealed class SettingsViewModel
         Hotkey = CurrentSettings.Hotkey;
         AutoPaste = CurrentSettings.AutoPaste;
         PlaySoundCues = CurrentSettings.PlaySoundCues;
+        StartWithWindows = CurrentSettings.StartWithWindows;
         CustomVocabulary = CurrentSettings.CustomVocabulary;
         CloudProvider = CurrentSettings.CloudProvider;
         ApiKey = string.Empty;
@@ -25,6 +26,7 @@ public sealed class SettingsViewModel
     public string? ConflictWarning { get; private set; }
     public bool AutoPaste { get; set; }
     public bool PlaySoundCues { get; set; }
+    public bool StartWithWindows { get; set; }
     public string CustomVocabulary { get; set; }
     public string CloudProvider { get; set; }
     public string ApiKey { get; set; }
@@ -49,6 +51,7 @@ public sealed class SettingsViewModel
             MicrophoneDeviceId = SelectedDeviceId,
             AutoPaste = AutoPaste,
             PlaySoundCues = PlaySoundCues,
+            StartWithWindows = StartWithWindows,
             CustomVocabulary = CustomVocabulary.Trim(),
             CloudProvider = CloudProvider,
             EncryptedApiKey = encryptedApiKey ?? CurrentSettings.EncryptedApiKey

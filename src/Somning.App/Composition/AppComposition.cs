@@ -15,6 +15,7 @@ using Somning.Core.Ports;
 using Somning.Core.Settings;
 using Somning.Core.Trigger;
 using Somning.Platform.Windows.Audio;
+using Somning.Platform.Windows.Autostart;
 using Somning.Platform.Windows.Clipboard;
 using Somning.Platform.Windows.Hook;
 using Somning.Platform.Windows.Overlay;
@@ -43,12 +44,13 @@ public sealed class AppComposition : IAsyncDisposable
     private Task recovery = Task.CompletedTask;
     private Action? shutdownCallback;
 
-    public AppComposition(Func<IAudioSource> audioSourceFactory, ISettingsStore? settingsStore = null, DynamicAudioSourceFactory? dynamicAudio = null)
+    public AppComposition(Func<IAudioSource> audioSourceFactory, ISettingsStore? settingsStore = null, DynamicAudioSourceFactory? dynamicAudio = null, IAutostartManager? autostartManager = null)
     {
         ArgumentNullException.ThrowIfNull(audioSourceFactory);
         Directory.CreateDirectory(SomningPaths.RecordingsDir);
         Directory.CreateDirectory(SomningPaths.LogsDir);
         DynamicAudioFactory = dynamicAudio;
+        AutostartManager = autostartManager ?? new RegistryAutostartManager();
         SettingsStore = settingsStore ?? new JsonSettingsStore();
         Settings = SettingsStore.LoadAsync().GetAwaiter().GetResult();
         AutoPasteEnabled = Settings.AutoPaste;
@@ -92,6 +94,7 @@ public sealed class AppComposition : IAsyncDisposable
     public SoundCuePlayer SoundPlayer { get; } = new();
     public bool AutoPasteEnabled { get; set; } = true;
     public ISettingsStore SettingsStore { get; }
+    public IAutostartManager AutostartManager { get; }
     public UserSettings Settings { get; private set; }
     public DynamicAudioSourceFactory? DynamicAudioFactory { get; }
     public IOverlayView? Overlay { get; private set; }
@@ -114,7 +117,13 @@ public sealed class AppComposition : IAsyncDisposable
         SettingsWindow?.Show(Settings, OnSettingsSaved);
     }
 
-    public void OnSettingsSaved(UserSettings updated)
+    public void OnSettingsSaved(UserSettings updated) => ApplySettings(updated);
+
+    /// <summary>
+    /// Persists the settings and applies them to the live components. The autostart registry entry is only
+    /// rewritten when its state diverges from the saved setting (no needless HKCU writes on every save).
+    /// </summary>
+    public void ApplySettings(UserSettings updated)
     {
         Settings = updated;
         _ = SettingsStore.SaveAsync(updated);
@@ -124,8 +133,13 @@ public sealed class AppComposition : IAsyncDisposable
         {
             DynamicAudioFactory.CurrentDeviceId = updated.MicrophoneDeviceId;
         }
-        Log.Information("Settings updated. Mic={Mic} AutoPaste={AutoPaste} SoundCues={SoundCues} Provider={Provider}",
-            updated.MicrophoneDeviceId, updated.AutoPaste, updated.PlaySoundCues, updated.CloudProvider);
+        // DIST-02: keep HKCU\...\Run in sync with the "Iniciar com o Windows" toggle.
+        if (AutostartManager.IsEnabled() != updated.StartWithWindows)
+        {
+            AutostartManager.SetEnabled(updated.StartWithWindows);
+        }
+        Log.Information("Settings updated. Mic={Mic} AutoPaste={AutoPaste} SoundCues={SoundCues} StartWithWindows={StartWithWindows} Provider={Provider}",
+            updated.MicrophoneDeviceId, updated.AutoPaste, updated.PlaySoundCues, updated.StartWithWindows, updated.CloudProvider);
     }
 
     public void EnableTray(Action requestShutdown)

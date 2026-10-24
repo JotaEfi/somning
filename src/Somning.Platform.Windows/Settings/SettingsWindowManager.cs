@@ -46,6 +46,8 @@ public sealed class SettingsWindowManager : ISettingsWindow
     private const int IdApiKeyEdit = 1006;
     private const int IdSaveButton = 1007;
     private const int IdCancelButton = 1008;
+    // 1009 avoids colliding with IdCancelButton (a duplicate id would make the checkbox close the dialog).
+    private const int IdStartWithWindowsCheck = 1009;
 
     private readonly Thread staThread;
     private readonly TaskCompletionSource<nint> ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -59,6 +61,7 @@ public sealed class SettingsWindowManager : ISettingsWindow
     private nint hDeviceCombo;
     private nint hAutoPasteCheck;
     private nint hSoundCuesCheck;
+    private nint hStartWithWindowsCheck;
     private nint hVocabEdit;
     private nint hProviderCombo;
     private nint hApiKeyEdit;
@@ -129,7 +132,7 @@ public sealed class SettingsWindowManager : ISettingsWindow
             WindowClassName,
             "Configurações - Somning",
             style,
-            150, 150, 420, 490,
+            150, 150, 420, 520,
             0, 0, instance, 0);
 
         if (hwnd == 0)
@@ -188,25 +191,27 @@ public sealed class SettingsWindowManager : ISettingsWindow
 
         hAutoPasteCheck = CreateWindowEx(0, "BUTTON", "Colar automaticamente no aplicativo ativo", WsChild | WsVisible | WsTabStop | BsAutoCheckBox, 20, 130, 360, 24, hwnd, (nint)IdAutoPasteCheck, instance, 0);
         hSoundCuesCheck = CreateWindowEx(0, "BUTTON", "Emitir sons de início e término", WsChild | WsVisible | WsTabStop | BsAutoCheckBox, 20, 160, 360, 24, hwnd, (nint)IdSoundCuesCheck, instance, 0);
+        hStartWithWindowsCheck = CreateWindowEx(0, "BUTTON", "Iniciar com o Windows", WsChild | WsVisible | WsTabStop | BsAutoCheckBox, 20, 190, 360, 24, hwnd, (nint)IdStartWithWindowsCheck, instance, 0);
 
-        CreateLabel(hwnd, instance, "Vocabulário / Termos específicos:", 20, 195, 360, 20);
-        hVocabEdit = CreateWindowEx(0, "EDIT", "", WsChild | WsVisible | WsTabStop | WsBorder | EsAutoHScroll, 20, 218, 360, 24, hwnd, (nint)IdVocabEdit, instance, 0);
+        CreateLabel(hwnd, instance, "Vocabulário / Termos específicos:", 20, 225, 360, 20);
+        hVocabEdit = CreateWindowEx(0, "EDIT", "", WsChild | WsVisible | WsTabStop | WsBorder | EsAutoHScroll, 20, 248, 360, 24, hwnd, (nint)IdVocabEdit, instance, 0);
 
-        CreateLabel(hwnd, instance, "Provedor de Transcrição:", 20, 255, 170, 20);
-        hProviderCombo = CreateWindowEx(0, "COMBOBOX", "", WsChild | WsVisible | WsTabStop | CbsDropDownList, 20, 278, 170, 120, hwnd, (nint)IdProviderCombo, instance, 0);
+        CreateLabel(hwnd, instance, "Provedor de Transcrição:", 20, 285, 170, 20);
+        hProviderCombo = CreateWindowEx(0, "COMBOBOX", "", WsChild | WsVisible | WsTabStop | CbsDropDownList, 20, 308, 170, 120, hwnd, (nint)IdProviderCombo, instance, 0);
 
-        CreateLabel(hwnd, instance, "Chave de API (Cloud):", 200, 255, 180, 20);
-        hApiKeyEdit = CreateWindowEx(0, "EDIT", "", WsChild | WsVisible | WsTabStop | WsBorder | EsAutoHScroll | EsPassword, 200, 278, 180, 24, hwnd, (nint)IdApiKeyEdit, instance, 0);
+        CreateLabel(hwnd, instance, "Chave de API (Cloud):", 200, 285, 180, 20);
+        hApiKeyEdit = CreateWindowEx(0, "EDIT", "", WsChild | WsVisible | WsTabStop | WsBorder | EsAutoHScroll | EsPassword, 200, 308, 180, 24, hwnd, (nint)IdApiKeyEdit, instance, 0);
 
         // Buttons
-        _ = CreateWindowEx(0, "BUTTON", "Salvar", WsChild | WsVisible | WsTabStop | BsDefPushButton, 190, 380, 90, 30, hwnd, (nint)IdSaveButton, instance, 0);
-        _ = CreateWindowEx(0, "BUTTON", "Cancelar", WsChild | WsVisible | WsTabStop | BsPushButton, 290, 380, 90, 30, hwnd, (nint)IdCancelButton, instance, 0);
+        _ = CreateWindowEx(0, "BUTTON", "Salvar", WsChild | WsVisible | WsTabStop | BsDefPushButton, 190, 410, 90, 30, hwnd, (nint)IdSaveButton, instance, 0);
+        _ = CreateWindowEx(0, "BUTTON", "Cancelar", WsChild | WsVisible | WsTabStop | BsPushButton, 290, 410, 90, 30, hwnd, (nint)IdCancelButton, instance, 0);
 
         // Apply Segoe UI font to all child controls
         SetControlFont(hDeviceCombo);
         SetControlFont(hHotkeyLabel);
         SetControlFont(hAutoPasteCheck);
         SetControlFont(hSoundCuesCheck);
+        SetControlFont(hStartWithWindowsCheck);
         SetControlFont(hVocabEdit);
         SetControlFont(hProviderCombo);
         SetControlFont(hApiKeyEdit);
@@ -251,6 +256,7 @@ public sealed class SettingsWindowManager : ISettingsWindow
         // 2. Checkboxes
         SendMessageW(hAutoPasteCheck, BmSetCheck, (nint)(settings.AutoPaste ? 1 : 0), 0);
         SendMessageW(hSoundCuesCheck, BmSetCheck, (nint)(settings.PlaySoundCues ? 1 : 0), 0);
+        SendMessageW(hStartWithWindowsCheck, BmSetCheck, (nint)(settings.StartWithWindows ? 1 : 0), 0);
 
         // 3. Vocab
         SetWindowTextW(hVocabEdit, settings.CustomVocabulary ?? string.Empty);
@@ -288,6 +294,7 @@ public sealed class SettingsWindowManager : ISettingsWindow
         // 2. Checkboxes
         bool autoPaste = SendMessageW(hAutoPasteCheck, BmGetCheck, 0, 0) == 1;
         bool soundCues = SendMessageW(hSoundCuesCheck, BmGetCheck, 0, 0) == 1;
+        bool startWithWindows = SendMessageW(hStartWithWindowsCheck, BmGetCheck, 0, 0) == 1;
 
         // 3. Vocab
         string vocab = GetWindowText(hVocabEdit);
@@ -318,6 +325,7 @@ public sealed class SettingsWindowManager : ISettingsWindow
             MicrophoneDeviceId = deviceId,
             AutoPaste = autoPaste,
             PlaySoundCues = soundCues,
+            StartWithWindows = startWithWindows,
             CustomVocabulary = vocab.Trim(),
             CloudProvider = provider,
             EncryptedApiKey = encryptedKey

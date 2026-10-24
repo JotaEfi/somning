@@ -26,6 +26,20 @@ public sealed class SettingsIntegrationTests
         }
     }
 
+    private sealed class FakeAutostartManager : IAutostartManager
+    {
+        public bool Enabled { get; private set; }
+        public int SetEnabledCalls { get; private set; }
+
+        public bool IsEnabled() => Enabled;
+
+        public void SetEnabled(bool enabled, string? executablePath = null, string arguments = "--tray")
+        {
+            SetEnabledCalls++;
+            Enabled = enabled;
+        }
+    }
+
     private sealed class TrackingTextOutput : ITextOutput
     {
         public bool DeliverCalled { get; private set; }
@@ -114,6 +128,64 @@ public sealed class SettingsIntegrationTests
         app.OnSettingsSaved(updated);
 
         Assert.True(app.SoundPlayer.Enabled);
+    }
+
+    [Fact]
+    public async Task StartWithWindowsToggle_SyncsSettingsStoreAndAutostart()
+    {
+        var store = new MemorySettingsStore
+        {
+            Current = new UserSettings { StartWithWindows = false }
+        };
+        var autostart = new FakeAutostartManager();
+
+        await using var app = new AppComposition(
+            () => new WasapiAudioSource(),
+            settingsStore: store,
+            autostartManager: autostart);
+
+        Assert.False(app.Settings.StartWithWindows);
+        Assert.False(app.AutostartManager.IsEnabled());
+
+        // Enable "Iniciar com o Windows" (DIST-02)
+        app.ApplySettings(app.Settings with { StartWithWindows = true });
+
+        Assert.True(store.Current.StartWithWindows);
+        Assert.True(app.Settings.StartWithWindows);
+        Assert.True(app.AutostartManager.IsEnabled());
+        Assert.Equal(1, autostart.SetEnabledCalls);
+
+        // Saving again without changing the toggle does not rewrite the registry entry.
+        app.ApplySettings(app.Settings with { StartWithWindows = true });
+        Assert.Equal(1, autostart.SetEnabledCalls);
+
+        // Disabling removes the autostart entry.
+        app.ApplySettings(app.Settings with { StartWithWindows = false });
+        Assert.False(store.Current.StartWithWindows);
+        Assert.False(app.AutostartManager.IsEnabled());
+        Assert.Equal(2, autostart.SetEnabledCalls);
+    }
+
+    [Fact]
+    public async Task SettingsViewModelStartWithWindows_SavedThroughOnSettingsSaved_ReachesAutostart()
+    {
+        var store = new MemorySettingsStore();
+        var autostart = new FakeAutostartManager();
+
+        await using var app = new AppComposition(
+            () => new WasapiAudioSource(),
+            settingsStore: store,
+            autostartManager: autostart);
+
+        var vm = new SettingsViewModel(app.Settings) { StartWithWindows = true };
+        var updated = vm.BuildUpdatedSettings();
+
+        Assert.True(updated.StartWithWindows);
+
+        app.OnSettingsSaved(updated);
+
+        Assert.True(store.Current.StartWithWindows);
+        Assert.True(autostart.Enabled);
     }
 
     [Fact]

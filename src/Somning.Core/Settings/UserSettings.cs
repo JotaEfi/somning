@@ -9,6 +9,7 @@ public sealed record UserSettings
     public string? EncryptedApiKey { get; init; }
     public bool AutoPaste { get; init; } = true;
     public bool PlaySoundCues { get; init; }
+    public bool StartWithWindows { get; init; } = false;
     public string CustomVocabulary { get; init; } = string.Empty;
     public int TapThresholdMs { get; init; } = 300;
     public string Language { get; init; } = "pt-BR";

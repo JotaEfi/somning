@@ -30,6 +30,7 @@ public sealed class SettingsStoreTests : IDisposable
         Assert.Null(settings.EncryptedApiKey);
         Assert.True(settings.AutoPaste);
         Assert.False(settings.PlaySoundCues);
+        Assert.False(settings.StartWithWindows);
         Assert.Equal(string.Empty, settings.CustomVocabulary);
         Assert.Equal(300, settings.TapThresholdMs);
         Assert.Equal("pt-BR", settings.Language);
@@ -60,6 +61,7 @@ public sealed class SettingsStoreTests : IDisposable
             EncryptedApiKey = "base64-dpapi-blob",
             AutoPaste = false,
             PlaySoundCues = true,
+            StartWithWindows = true,
             CustomVocabulary = "Somning, OpenCode, Maestro",
             TapThresholdMs = 450,
             Language = "en-US"
@@ -73,6 +75,18 @@ public sealed class SettingsStoreTests : IDisposable
         Assert.Equal(expected, loaded);
         Assert.True(File.Exists(SettingsPath));
         Assert.Empty(Directory.GetFiles(_directory, "*.tmp"));
+    }
+
+    [Fact]
+    public async Task SettingsStore_LegacyJson_DefaultsStartWithWindowsToFalse()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await File.WriteAllTextAsync(SettingsPath, "{\"language\":\"en-US\"}", cancellationToken);
+
+        var loaded = await new JsonSettingsStore(SettingsPath).LoadAsync(cancellationToken);
+
+        Assert.False(loaded.StartWithWindows);
+        Assert.Equal("en-US", loaded.Language);
     }
 
     [Fact]

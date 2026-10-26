@@ -59,7 +59,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Distribution (DIST)
 
-- [ ] **DIST-01**: User can install Somning via a per-user Windows installer that works on a clean Windows 10 machine without dev tools
+- [x] **DIST-01**: User can install Somning via a per-user Windows installer that works on a clean Windows 10 machine without dev tools
 - [x] **DIST-02**: User can enable start-with-Windows (starts minimized to tray)
 - [x] **DIST-03**: App keeps working after sleep/resume, lock/unlock and long uptime (hook watchdog/reinstall)
 
@@ -68,14 +68,21 @@ Requirements for initial release. Each maps to roadmap phases.
 Deferred to future release. Tracked but not in current roadmap.
 
 ### Languages
+
 - **LANG-01**: User can choose other dictation languages (EN, ES…) or auto-detect
+
 ### Text processing
+
 - **TXT-01**: Spoken punctuation commands ("vírgula", "ponto", "nova linha")
 - **TXT-02**: Optional LLM post-processing (cleanup, formatting, tone)
+
 ### Output
+
 - **OUT2-01**: Optional clipboard-restore mode
 - **OUT2-02**: Per-app paste method (Ctrl+Shift+V / Shift+Insert for terminals)
+
 ### History
+
 - **HIST-01**: Transcription history window with search and re-copy
 
 ## Out of Scope
@@ -129,7 +136,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | APP-04 | Phase 2 | Complete |
 | APP-05 | Phase 2 | Complete |
 | APP-06 | Phase 1 | Complete |
-| DIST-01 | Phase 4 | Pending |
+| DIST-01 | Phase 4 | Complete |
 | DIST-02 | Phase 4 | Complete |
 | DIST-03 | Phase 4 | Pending |
 

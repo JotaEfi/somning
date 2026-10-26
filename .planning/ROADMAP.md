@@ -63,6 +63,7 @@ Plans (all execution and verification sequential):
 - [x] 02-04-PLAN.md - Overlay pill window with live waveform and non-intrusive styles (wave 4)
 - [x] 02-05-PLAN.md - Settings dialog, dynamic audio device switching and sound cues (wave 5)
 - [x] 02-06-PLAN.md - First-run model downloader with resume and SHA-256 verification (wave 6)
+
 **UI hint**: yes
 
 ### Phase 3: Cloud Engine
@@ -79,6 +80,7 @@ Plans (all execution and verification sequential):
 **Plans**: 2 plans
 - [x] 03-01-PLAN.md - Cloud transcriber contracts, Groq & OpenAI clients, error classification & key masking (wave 1)
 - [x] 03-02-PLAN.md - Mock HTTP fixture suite, recording retention & cloud adapter integration (wave 2)
+
 **UI hint**: yes
 
 ### Phase 4: Packaging, Autostart & Hardening
@@ -92,10 +94,10 @@ Plans (all execution and verification sequential):
   2. Enabling start-with-Windows registers the HKCU Run entry and the app starts minimized to tray on logon
   3. After simulated sleep/resume and lock/unlock, and a scripted soak of many dictations, the hotkey hook still works (watchdog reinstall) and a paste-matrix report (Notepad, Chrome/Edge, VS Code, Windows Terminal, Word, elevated Notepad notice) is produced
 
-**Plans**: 3 plans
+**Plans**: 3/3 plans executed
 - [x] 04-01-PLAN.md - Start-with-Windows autostart, registry HKCU & tray/settings toggle (wave 1)
 - [x] 04-02-PLAN.md - Power & session resilience (sleep/resume, lock/unlock) & hook watchdog (wave 2)
-- [ ] 04-03-PLAN.md - Per-user installer, directory layout & soak/paste matrix verification (wave 3)
+- [x] 04-03-PLAN.md - Per-user installer, directory layout & soak/paste matrix verification (wave 3)
 
 ## Progress
 
@@ -104,4 +106,4 @@ Plans (all execution and verification sequential):
 | 1. Dictation Loop MVP | 13/13 | Complete | 2026-10-23 |
 | 2. Overlay, Tray, Settings & Cancel | 6/6 | Complete | 2026-10-23 |
 | 3. Cloud Engine | 2/2 | Complete | 2026-10-23 |
-| 4. Packaging, Autostart & Hardening | 2/3 | In progress | - |
+| 4. Packaging, Autostart & Hardening | 3/3 | In Progress|  |

@@ -9,7 +9,7 @@ Somning goes from a headless, agent-verifiable dictation loop (hotkey, mic, loca
 - [x] **Phase 1: Dictation Loop MVP** - Headless end-to-end: hotkey to mic to local Whisper pt-BR to clipboard and auto-paste, gated by a Win10 published-build inference benchmark
 - [x] **Phase 2: Overlay, Tray, Settings & Cancel** - Daily-usable shell: waveform pill, tray, persisted settings, Esc cancel, first-run model download
 - [x] **Phase 3: Cloud Engine** - Opt-in Groq/OpenAI transcription with explicit errors and recoverable recordings
-- [ ] **Phase 4: Packaging, Autostart & Hardening** - Per-user installer, start-with-Windows, sleep/resume and soak resilience
+- [x] **Phase 4: Packaging, Autostart & Hardening** - Per-user installer, start-with-Windows, sleep/resume and soak resilience (completed 2026-10-29)
 
 ## Phase Details
 
@@ -101,7 +101,7 @@ Plans (all execution and verification sequential):
   2. Enabling start-with-Windows registers the HKCU Run entry and the app starts minimized to tray on logon
   3. After simulated sleep/resume and lock/unlock, and a scripted soak of many dictations, the hotkey hook still works (watchdog reinstall) and a paste-matrix report (Notepad, Chrome/Edge, VS Code, Windows Terminal, Word, elevated Notepad notice) is produced
 
-**Plans**: 6/6 plans executed
+**Plans**: 6/6 plans complete
 
 - [x] 04-04-PLAN.md
 - [x] 04-05-PLAN.md
@@ -117,4 +117,4 @@ Plans (all execution and verification sequential):
 | 1. Dictation Loop MVP | 13/13 | Complete | 2026-10-23 |
 | 2. Overlay, Tray, Settings & Cancel | 6/6 | Complete | 2026-10-23 |
 | 3. Cloud Engine | 2/2 | Complete | 2026-10-23 |
-| 4. Packaging, Autostart & Hardening | 6/6 | In Progress|  |
+| 4. Packaging, Autostart & Hardening | 6/6 | Complete    | 2026-10-29 |

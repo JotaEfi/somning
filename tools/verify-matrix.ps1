@@ -89,6 +89,25 @@ if ($otherRuns.Count -gt 0) {
     exit 4
 }
 
+# The named mutex is the real single-instance protection (the process enumeration above is only a diagnostic and is racy).
+# It is held for the whole run and released in the final finally.
+$createdNew = $false
+$runMutex = New-Object Threading.Mutex($false, 'Global\Somning.VerifyMatrix.Run', [ref]$createdNew)
+$mutexAcquired = $false
+try { $mutexAcquired = $runMutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $mutexAcquired = $true }
+if (-not $mutexAcquired) {
+    Write-Host 'Another verify-matrix.ps1 run holds the Global\Somning.VerifyMatrix.Run mutex; refusing to start.' -ForegroundColor Red
+    exit 4
+}
+
+# Never touch the owner's own Somning: the matrix installs and kills only copies it started itself. If the owner's app is running
+# (it holds the harness pipe name, the hook and the clipboard-driven tests would collide with it), refuse to start at all.
+$userSomning = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -in 'Somning.App.exe', 'Somning.Engine.exe' })
+if ($userSomning.Count -gt 0) {
+    Write-Host ('A Somning.App/Somning.Engine instance is already running (PID ' + (($userSomning | ForEach-Object { $_.ProcessId }) -join ', ') + '); refusing to start. Quit it first.') -ForegroundColor Red
+    $runMutex.ReleaseMutex(); exit 5
+}
+
 $results = New-Object 'Collections.Generic.List[object]'
 
 function Add-Result([string]$Category, [string]$Scenario, [string]$Method, [string]$Status, [string]$Evidence) {
@@ -109,34 +128,71 @@ function Stop-OrphanTestProcesses {
     } catch { Write-Host "Orphan cleanup warning: $($_.Exception.Message)" -ForegroundColor Yellow }
 }
 
+# Stops Somning.App/Somning.Engine processes whose EXECUTABLE lives under one of the given roots (copies this run installed or the
+# Debug build the tests launch). The owner's own installation under %LOCALAPPDATA%\Somning\app is never matched.
+function Stop-SomningUnder([string[]]$Roots) {
+    $roots = @($Roots | Where-Object { $_ } | ForEach-Object { [IO.Path]::GetFullPath($_).TrimEnd('\') + '\' })
+    if ($roots.Count -eq 0) { return }
+    try {
+        Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object { $_.Name -in 'Somning.App.exe', 'Somning.Engine.exe' -and $_.ExecutablePath } | ForEach-Object {
+            $exePath = $_.ExecutablePath
+            if ($roots | Where-Object { $exePath.StartsWith($_, [StringComparison]::OrdinalIgnoreCase) }) {
+                Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+            }
+        }
+    } catch { Write-Host "Somning cleanup warning: $($_.Exception.Message)" -ForegroundColor Yellow }
+}
+
+# Kills a process tree by PID without letting native stderr become a PowerShell error; returns the taskkill exit code.
+function Stop-ProcessTree([int]$ProcessId) {
+    & cmd.exe /c "taskkill /PID $ProcessId /T /F >nul 2>&1"
+    return $LASTEXITCODE
+}
+
+# Reads at most the last $MaxChars characters of a file that another (orphaned) process may still hold open.
+function Read-TailBounded([string]$Path, [int]$MaxChars = 1000000) {
+    try {
+        $fs = New-Object IO.FileStream($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+        try {
+            $bytes = [Math]::Min($fs.Length, [long]($MaxChars * 4))
+            [void]$fs.Seek(-$bytes, [IO.SeekOrigin]::End)
+            $buffer = New-Object byte[] $bytes
+            $read = $fs.Read($buffer, 0, $buffer.Length)
+            return [Text.Encoding]::UTF8.GetString($buffer, 0, $read)
+        } finally { $fs.Dispose() }
+    } catch { return '' }
+}
+
 # Runs a native exe with stdout/stderr redirected to FILES (never pipes) and a hard timeout. Orphaned grandchildren that inherit
 # the handles cannot hold this script (we only wait for the exe itself), and native stderr can never become a PowerShell error.
 function Invoke-NativeBounded([string]$Exe, [string[]]$Arguments, [int]$TimeoutSeconds = 600) {
     $outFile = Join-Path $env:TEMP ('somning-native-' + [guid]::NewGuid().ToString('N') + '.out')
     $errFile = Join-Path $env:TEMP ('somning-native-' + [guid]::NewGuid().ToString('N') + '.err')
     $quoted = @($Arguments | ForEach-Object { if ($_ -match '[\s"]') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ } })
-    $timedOut = $false; $exit = -1
+    $timedOut = $false; $exit = -1; $killFailed = $false
     $proc = Start-Process -FilePath $Exe -ArgumentList $quoted -NoNewWindow -PassThru -RedirectStandardOutput $outFile -RedirectStandardError $errFile
     $null = $proc.Handle
     try {
-        if (-not $proc.WaitForExit($TimeoutSeconds * 1000)) {
+        $exited = $proc.WaitForExit($TimeoutSeconds * 1000)
+        if (-not $exited) {
             $timedOut = $true
-            & taskkill.exe /PID $proc.Id /T /F 2>&1 | Out-Null
-            [void]$proc.WaitForExit(10000)
+            $killCode = Stop-ProcessTree $proc.Id
+            $exited = $proc.WaitForExit(10000)
+            if (-not $exited) { $killFailed = $true }   # no further unconditional wait: report it instead of hanging
+            elseif ($killCode -ne 0) { Write-Host "taskkill exit $killCode but the process is gone" -ForegroundColor Yellow }
         }
-        $proc.WaitForExit()
-        $exit = $proc.ExitCode
+        if ($exited) { $exit = $proc.ExitCode }
     } finally {
         Stop-OrphanTestProcesses
     }
     $text = ''
     foreach ($f in @($outFile, $errFile)) {
         if (Test-Path -LiteralPath $f) {
-            try { $text += [IO.File]::ReadAllText($f) + "`n" } catch { }
+            $text += (Read-TailBounded $f) + "`n"
             Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue
         }
     }
-    return [pscustomobject]@{ Exit = $exit; Output = $text; TimedOut = $timedOut }
+    return [pscustomobject]@{ Exit = $exit; Output = $text; TimedOut = ($timedOut -or $killFailed); KillFailed = $killFailed }
 }
 
 # Runs an xunit v3 in-process runner once and maps its summary line to a status (no retries).
@@ -199,6 +255,11 @@ function Invoke-XunitXml([string]$Exe, [string[]]$Filter, [hashtable]$ChildEnv =
     if (-not (Test-Path -LiteralPath $xmlPath)) { return [pscustomobject]@{ Ran = $true; Exit = $exit; Tests = @(); Note = "runner produced no XML result (exit $exit)" } }
     try {
         [xml]$doc = Get-Content -LiteralPath $xmlPath -Raw -Encoding UTF8
+        $globalErrors = @($doc.SelectNodes('//errors/error') | ForEach-Object { [string]$_.type + ': ' + [string]$_.name })
+        foreach ($a in @($doc.SelectNodes('//assembly'))) {
+            $n = 0
+            if ($a.Attributes['errors'] -and [int]::TryParse([string]$a.Attributes['errors'].Value, [ref]$n) -and $n -gt 0) { $globalErrors += "assembly reported $n error(s)" }
+        }
         $tests = @($doc.SelectNodes('//test') | ForEach-Object {
             $reason = ''
             if ($_.SelectSingleNode('reason')) { $reason = $_.SelectSingleNode('reason').InnerText }
@@ -208,12 +269,21 @@ function Invoke-XunitXml([string]$Exe, [string[]]$Filter, [hashtable]$ChildEnv =
     } catch {
         return [pscustomobject]@{ Ran = $true; Exit = $exit; Tests = @(); Note = "unparsable runner XML: $($_.Exception.Message)" }
     } finally { Remove-Item -LiteralPath $xmlPath -Force -ErrorAction SilentlyContinue }
-    return [pscustomobject]@{ Ran = $true; Exit = $exit; Tests = $tests; Note = '' }
+    # A run whose exit code is non-zero without ANY failed test or global error is unexplained: no row may be approved from it.
+    $anyFailed = @($tests | Where-Object { $_.Result -eq 'Fail' }).Count -gt 0
+    $note = ''
+    if ($globalErrors.Count -gt 0) { $note = 'runner reported global errors: ' + ($globalErrors -join '; ') }
+    elseif ($exit -ne 0 -and -not $anyFailed) { $note = "runner exit code $exit with no failed test in the XML (unexplained)" }
+    return [pscustomobject]@{ Ran = $true; Exit = $exit; Tests = $tests; Note = $note; Untrusted = [bool]$note }
 }
 
 # Maps one executed test result (Pass/Fail/Skip) to a matrix status; no result = FAIL (never silently PASS).
-function Convert-TestStatus($Test, [string]$PassNote, [string]$MissingNote) {
+function Convert-TestStatus($Test, [string]$PassNote, [string]$MissingNote, $Run = $null) {
     if ($null -eq $Test) { return [pscustomobject]@{ Status = 'FAIL'; Evidence = $MissingNote } }
+    # Never approve a row from a run the runner itself flagged (global errors, or exit != 0 with nothing failed).
+    if ($Run -and $Run.PSObject.Properties['Untrusted'] -and $Run.Untrusted -and $Test.Result -ne 'Fail') {
+        return [pscustomobject]@{ Status = 'FAIL'; Evidence = "test result '$($Test.Result)' not trusted: $($Run.Note)" }
+    }
     $short = $Test.Reason.Trim(); if ($short.Length -gt 300) { $short = $short.Substring(0, 300) + '...' }
     switch ($Test.Result) {
         'Pass' { return [pscustomobject]@{ Status = 'PASS'; Evidence = $PassNote } }
@@ -248,6 +318,8 @@ $runBackup = (Get-ItemProperty -Path $runKeyPath -Name 'Somning' -ErrorAction Si
 $runBackupValue = if ($null -ne $runBackup) { $runBackup.Somning } else { $null }
 
 $installOk = $false
+$harnessInstallDir = $null
+$debugBinDir = Split-Path $integrationExe -Parent   # the Debug build the tests launch (never the owner's installed copy)
 try {
     $installScript = Join-Path $PSScriptRoot 'install.ps1'
     $installedApp = Join-Path $installAppDir 'Somning.App.exe'
@@ -316,7 +388,9 @@ try {
             Add-Result 'Deployment' 'Installed app launches with --tray' 'Start-Process installed Somning.App.exe --tray' 'PASS' 'Process alive; Somning.Engine.exe started from installed engine\ directory'
         } catch { Add-Result 'Deployment' 'Installed app launches with --tray' 'Start-Process installed Somning.App.exe --tray' 'FAIL' $_.Exception.Message }
         finally {
-            Get-Process -Name 'Somning.App', 'Somning.Engine' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            # Only the process tree THIS run started (the installed copy), never the owner's own Somning.
+            if ($tray -and -not $tray.HasExited) { [void](Stop-ProcessTree $tray.Id) }
+            Stop-SomningUnder @($installAppDir)
             Start-Sleep -Milliseconds 500
         }
 
@@ -382,18 +456,18 @@ try {
                 $test = $null
                 if ($run.Tests.Count -eq 1) { $test = $run.Tests[0] }
                 $missing = if ($run.Note) { $run.Note } else { "expected exactly 1 test for the filter, matched $($run.Tests.Count) (exit $($run.Exit))" }
-                $mapped = Convert-TestStatus $test ("Real Notepad received the dictated text using installed app '" + $installedHarnessApp + "'") $missing
+                $mapped = Convert-TestStatus $test ("Real Notepad received the dictated text using installed app '" + $installedHarnessApp + "'") $missing $run
                 Add-Result 'Deployment' $s.Scenario $method $mapped.Status ($mapped.Evidence + " [installed path: $installedHarnessApp]")
             }
         } finally {
-            Get-Process -Name 'Somning.App', 'Somning.Engine' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Stop-SomningUnder @($harnessInstallDir, $debugBinDir)
             Start-Sleep -Milliseconds 500
             try { & (Join-Path $harnessInstallDir 'uninstall.ps1') -InstallDir $harnessInstallDir -Quiet } catch { Write-Host "Harness uninstall warning: $($_.Exception.Message)" -ForegroundColor Yellow }
         }
     }
     if (Test-Path -LiteralPath $stageDir2) { Remove-Item -LiteralPath $stageDir2 -Recurse -Force -ErrorAction SilentlyContinue }
 } finally {
-    Get-Process -Name 'Somning.App', 'Somning.Engine' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Stop-SomningUnder @($installAppDir, $harnessInstallDir, $debugBinDir)
     if (Test-Path -LiteralPath $sentinel) { Remove-Item -LiteralPath $sentinel -Force -ErrorAction SilentlyContinue }
     if (Test-Path -LiteralPath $stageDir) { Remove-Item -LiteralPath $stageDir -Recurse -Force -ErrorAction SilentlyContinue }
     # Restore real user state.
@@ -452,7 +526,7 @@ foreach ($spec in @(
     @{ Name = 'Fake_probe_loop_reinstalls_only_after_threshold'; Scenario = 'Watchdog: headless fake probe loop reinstalls only after threshold'; Pass = 'Headless fake loop honoured the reinstall threshold' })) {
     $t = $wd.Tests | Where-Object { $_.Name -like ('*' + $spec.Name + '*') } | Select-Object -First 1
     $missing = if ($wd.Note) { $wd.Note } else { "no result for $($spec.Name) (runner exit $($wd.Exit))" }
-    $m = Convert-TestStatus $t $spec.Pass $missing
+    $m = Convert-TestStatus $t $spec.Pass $missing $wd
     Add-Result 'Watchdog' $spec.Scenario ('Somning.Integration.Tests.exe -class *HookWatchdogLivenessTests* :: ' + $spec.Name) $m.Status $m.Evidence
 }
 
@@ -464,7 +538,7 @@ foreach ($app in @(@('chrome', 'Chrome'), @('edge', 'Edge'), @('vscode', 'VS Cod
     $id = $app[0]
     $t = $pasteTests | Where-Object { $_.Name -match ('"' + [regex]::Escape($id) + '"') } | Select-Object -First 1
     $missing = if ($pasteRun.Note) { $pasteRun.Note } else { "no result for target '$id' in the runner output (exit $($pasteRun.Exit))" }
-    $m = Convert-TestStatus $t ($app[1] + ' received the pasted sentinel text via Ctrl+V and clipboard read-back matched') $missing
+    $m = Convert-TestStatus $t ($app[1] + ' received the pasted sentinel text via Ctrl+V and clipboard read-back matched') $missing $pasteRun
     if ($m.Status -eq 'SKIPPED' -and $t.Reason -match 'not installed') { $m = [pscustomobject]@{ Status = 'SKIPPED'; Evidence = 'not installed on this machine' } }
     Add-Result 'Paste' ('Application target: ' + $app[1]) ('PasteTargetMatrixTests.Pastes_into_target_application(' + $id + ')') $m.Status $m.Evidence
 }
@@ -487,7 +561,7 @@ try {
     $ev = "requested=$($soakJson.requested) completed=$($soakJson.completed) failures=$($soakJson.failures) handleDelta=$hGrow privateByteDelta=$bGrow " +
           "hookInstalls=$($soakJson.hookInstallCountStart)->$($soakJson.hookInstallCountEnd) watchdogReinstalls=$($soakJson.watchdogReinstalls) finalRealHotkeyOk=$($soakJson.finalRealHotkeyOk) result=$($soakJson.result)"
     if ($soakJson.result -ne 'PASS') { $ev += ' reasons=' + (($soakJson.reasons) -join '; ') }
-    $status = if ($soakJson.result -eq 'PASS' -and $soakTest -and $soakTest.Result -eq 'Pass') { 'PASS' }
+    $status = if ($soakJson.result -eq 'PASS' -and $soakTest -and $soakTest.Result -eq 'Pass' -and -not $soakRun.Untrusted) { 'PASS' }
               elseif ($soakTest -and $soakTest.Result -eq 'Skip') { 'SKIPPED' } else { 'FAIL' }
     if ($status -eq 'FAIL' -and $soakJson.result -eq 'PASS') { $ev += ' (report says PASS but the test did not pass)' }
     Add-Result 'Soak' "Soak: $SoakIterations dictations + real-hotkey dictation, no leaks or failures" 'SoakTests.Fifty_dictations_then_real_hotkey_dictation_stay_healthy; SOAK-REPORT.json' $status $ev
@@ -549,4 +623,5 @@ Write-Host "`n=== Matrix finished: $overall ===" -ForegroundColor Green
 } finally {
     # Never leave test-launched browsers/editors or runner children behind (they hold inherited handles and profiles).
     Stop-OrphanTestProcesses
+    try { $runMutex.ReleaseMutex() } catch { }
 }

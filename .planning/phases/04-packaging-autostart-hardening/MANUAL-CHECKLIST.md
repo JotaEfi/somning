@@ -38,3 +38,18 @@ These items cannot be automated honestly on a single-user desktop. Record the re
 - [ ] With "start with Windows" enabled, reboot and log on.
 - Expected: tray icon appears without manual launch and the hotkey works (dictate into Notepad).
 - Result: date ____ tester ____ outcome ____
+
+## Acceptance record (2026-10-29)
+
+Reported by the phase orchestrator, which quoted the owner's message "aceito, segue para o fechamento da fase" (the executor could not
+verify this message itself; the phase verifier should confirm it with the owner). Under that report, the phase closes with the
+following items left MANUAL or accepted as known limitations, NOT verified by automated evidence:
+
+- Word paste row: FAIL in the matrix (read-back returns the sentinel; see `deferred-items.md`). Known limitation, not hidden.
+- Microsoft Edge: not installed on this machine (SKIPPED).
+- Real UIPI against an elevated target window (SKIPPED test; policy unit tests only).
+- Watchdog blocked-injection case (SKIPPED: needs an elevated foreground window).
+- Windows Terminal paste (checklist item 1).
+- Real sleep/wake and real lock/unlock (checklist items 3 and 4; only synthetic messages tested).
+- UAC dialog behaviour.
+- Clean-machine install without the .NET SDK and logon autostart after reboot (checklist items 5 and 6).

@@ -44,6 +44,10 @@ public sealed class AppComposition : IAsyncDisposable
     private Task engineStart = Task.CompletedTask;
     private Task recovery = Task.CompletedTask;
     private Action? shutdownCallback;
+    private static readonly TimeSpan DefaultHookWatchdogInterval = TimeSpan.FromSeconds(30);
+    private readonly HookLivenessWatchdog hookWatchdog;
+    private CancellationTokenSource? watchdogCts;
+    private Task watchdogTask = Task.CompletedTask;
 
     public AppComposition(Func<IAudioSource> audioSourceFactory, ISettingsStore? settingsStore = null, DynamicAudioSourceFactory? dynamicAudio = null, IAutostartManager? autostartManager = null, PowerSessionListener? powerListener = null)
     {
@@ -77,6 +81,9 @@ public sealed class AppComposition : IAsyncDisposable
         Host = new DictationHost(PhysicalKeyState.AreChordModifiersDown, idTaken: IdTaken,
             initialState: DictationState.Initial with { RecoveryAdmissionPending = true });
         Hook.IsRecordingActive = () => Host.State.Capture is not null;
+        hookWatchdog = new HookLivenessWatchdog(new HookLivenessProbe(Hook), new HookLivenessPolicy(),
+            () => ReinstallHookAfterWake("Watchdog: hook probe missed"), () => Host.State.Capture is not null,
+            LogWatchdog, interval: ResolveWatchdogInterval());
         Runner = new EffectRunner(e => Host.Post(e), Sidecars, SomningPaths.RecordingsDir, audioSourceFactory, probe, Transcriber, paster, History, () => Overlay, AudioLevelTracker, () => AutoPasteEnabled, SoundPlayer);
         Engine.RequestWritten += Runner.OnRequestWritten;
         Engine.StatusChanged += status => Host.Post(new EngineStatusChanged(status));
@@ -93,6 +100,7 @@ public sealed class AppComposition : IAsyncDisposable
     }
 
     public EngineSupervisor Engine { get; }
+    public HookLivenessWatchdog HookWatchdog => hookWatchdog;
     public CloudTranscriptionClient CloudClient { get; }
     public RouterTranscriber Transcriber { get; }
     public KeyboardHook Hook { get; }
@@ -217,6 +225,31 @@ public sealed class AppComposition : IAsyncDisposable
         Pipe.Start();
     }
 #endif
+
+    /// <summary>DIST-03: starts the periodic hook liveness probe. Call right after Hook.Start().</summary>
+    public void StartHookWatchdog()
+    {
+        if (watchdogCts is not null) return;
+        watchdogCts = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+        var token = watchdogCts.Token;
+        watchdogTask = Task.Run(() => hookWatchdog.RunAsync(token), CancellationToken.None);
+    }
+
+    private static void LogWatchdog(string message)
+    {
+        if (message.Contains("limit reached", StringComparison.Ordinal)) Log.Error("{Message}", message);
+        else Log.Warning("{Message}", message);
+    }
+
+    private static TimeSpan ResolveWatchdogInterval()
+    {
+#if SOMNING_TEST_HARNESS
+        // Override exists only in harness-enabled builds (the symbol is compiled out of the default Release package).
+        var raw = Environment.GetEnvironmentVariable("SOMNING_HOOK_WATCHDOG_MS");
+        if (int.TryParse(raw, out var ms) && ms >= 50) return TimeSpan.FromMilliseconds(ms);
+#endif
+        return DefaultHookWatchdogInterval;
+    }
 
     /// <summary>Starts the single-writer loop, its 50 ms tick and the hook pump (the hook itself is started by Program).</summary>
     public void StartLoop() => Host.Start(Runner.Run, keys.Reader);
@@ -367,6 +400,9 @@ public sealed class AppComposition : IAsyncDisposable
         Overlay?.Dispose();
         Tray?.Dispose();
         PowerListener?.Dispose();
+        try { watchdogCts?.Cancel(); await watchdogTask.ConfigureAwait(false); }
+        catch (Exception ex) { Log.Debug(ex, "Hook watchdog ended during shutdown"); }
+        watchdogCts?.Dispose();
         Hook.Dispose();
         try { await recovery.ConfigureAwait(false); }
         catch (Exception ex) { Log.Debug(ex, "Recovery ended during shutdown"); }

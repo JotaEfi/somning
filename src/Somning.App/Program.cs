@@ -90,6 +90,7 @@ static async Task<int> RunDictationAsync(Func<IAudioSource> audioSourceFactory, 
         }
         app.StartLoop();
         app.Hook.Start(); // KeyboardHook installed BEFORE the engine StartAsync (below) is even called
+        app.StartHookWatchdog();
         Log.Information("hook installed");
         app.Host.Notify("hook_installed");
         _ = app.StartRecoveryInBackground(); // pre-hook snapshot only; posts RecoveryRequested into the same FIFO (D-11)

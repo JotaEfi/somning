@@ -13,6 +13,8 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
     private const uint LayoutRestoreMessage = 0x8000 + 0x31;
     private const uint LayoutVerifyMessage = 0x8000 + 0x32;
     private const uint ReinstallHookMessage = 0x8000 + 0x33;
+    private const uint SilentRemovalMessage = 0x8000 + 0x34;
+    private int probeSeenCount;
     private int hookActive;
     private nint hookHandle;
     private int installCount;
@@ -36,7 +38,21 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
     internal nint HookHandle => Volatile.Read(ref hookHandle);
 
     /// <summary>Test observability: number of successful hook installations, including reinstalls.</summary>
-    internal int InstallCount => Volatile.Read(ref installCount);
+    public int InstallCount => Volatile.Read(ref installCount);
+
+    /// <summary>Liveness observability: number of marker probe keystrokes the hook callback has swallowed.</summary>
+    public int ProbeSeenCount => Volatile.Read(ref probeSeenCount);
+
+    /// <summary>
+    /// Test seam: unhooks the native hook on the hook thread WITHOUT updating hookActive/installCount, imitating
+    /// Windows silently dropping a low-level hook after a callback timeout.
+    /// </summary>
+    internal void SimulateSilentRemovalForTests()
+    {
+        if (!ready.Task.IsCompletedSuccessfully) throw new InvalidOperationException("Hook has not started.");
+        if (!PInvoke.PostThreadMessage(threadId, SilentRemovalMessage, default, default))
+            throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+    }
 
     public void Reinstall()
     {
@@ -76,7 +92,7 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
                     if ((uint)message.message == ReinstallHookMessage)
                     {
                         Volatile.Write(ref hookActive, 0);
-                        hook.Dispose(); // SafeHandle releases via UnhookWindowsHookEx on this thread.
+                        DisposeHookTolerant(hook); // SafeHandle releases via UnhookWindowsHookEx on this thread.
                         tracker = default;
                         hook = PInvoke.SetWindowsHookEx(WINDOWS_HOOK_ID.WH_KEYBOARD_LL, rootedCallback!, null, 0);
                         if (hook.IsInvalid) throw new InvalidOperationException("Unable to reinstall keyboard hook.");
@@ -84,12 +100,16 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
                         _ = Interlocked.Increment(ref installCount);
                         Volatile.Write(ref hookActive, 1);
                     }
+                    else if ((uint)message.message == SilentRemovalMessage)
+                    {
+                        _ = PInvoke.UnhookWindowsHookEx((HHOOK)hookHandle);
+                    }
                     else if ((uint)message.message == LayoutRestoreMessage) QueueLayoutVerification();
                     else if ((uint)message.message == LayoutVerifyMessage) RestoreHotkeyLayout();
                     else { PInvoke.TranslateMessage(in message); PInvoke.DispatchMessage(in message); }
                 }
             }
-            finally { Volatile.Write(ref hookActive, 0); hook.Dispose(); }
+            finally { Volatile.Write(ref hookActive, 0); DisposeHookTolerant(hook); }
         }
         catch (Exception ex)
         {
@@ -100,10 +120,22 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
         finally { sink.TryComplete(); }
     }
 
+    /// <summary>Disposing a hook Windows already removed makes the native unhook fail; that must not throw.</summary>
+    private static void DisposeHookTolerant(IDisposable hook)
+    {
+        try { hook.Dispose(); }
+        catch (Exception ex) { System.Diagnostics.Trace.TraceWarning("Hook dispose after removal: {0}", ex.Message); }
+    }
+
     private LRESULT OnKeyboard(int code, WPARAM wparam, LPARAM lparam)
     {
         if (code < 0) return PInvoke.CallNextHookEx((HHOOK)default, code, wparam, lparam);
         var data = (KBDLLHOOKSTRUCT*)lparam.Value;
+        if (data->dwExtraInfo == InputMarkers.Probe)
+        {
+            _ = Interlocked.Increment(ref probeSeenCount);
+            return new LRESULT(1); // swallow: the target app never sees the liveness probe key
+        }
         if (data->dwExtraInfo == InputMarkers.Paste || data->dwExtraInfo == InputMarkers.Mask)
             return PInvoke.CallNextHookEx((HHOOK)default, code, wparam, lparam);
         bool down = wparam.Value is 0x100 or 0x104;

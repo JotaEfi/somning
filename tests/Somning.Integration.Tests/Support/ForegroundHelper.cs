@@ -45,6 +45,32 @@ public static class ForegroundHelper
         return false;
     }
 
+    /// <summary>The current foreground window handle (0 when none).</summary>
+    public static unsafe nint ForegroundWindow() => (nint)PInvoke.GetForegroundWindow().Value;
+
+    /// <summary>The focused control of the thread that owns <paramref name="window"/> (0 when none or unknown).</summary>
+    public static unsafe nint FocusedControl(nint window)
+    {
+        var thread = PInvoke.GetWindowThreadProcessId(new HWND(window), out _);
+        var info = new GUITHREADINFO { cbSize = (uint)Marshal.SizeOf<GUITHREADINFO>() };
+        return thread != 0 && PInvoke.GetGUIThreadInfo(thread, ref info) ? (nint)info.hwndFocus.Value : 0;
+    }
+
+    /// <summary>Diagnostic string naming the foreground window (title/class) and the focused control of <paramref name="window"/>.</summary>
+    public static string Describe(nint window)
+    {
+        var foreground = ForegroundWindow();
+        var title = new System.Text.StringBuilder(256);
+        var className = new System.Text.StringBuilder(256);
+        if (foreground != 0)
+        {
+            _ = GetWindowText(foreground, title, title.Capacity);
+            _ = GetClassName(foreground, className, className.Capacity);
+        }
+        return $"foreground=0x{foreground:X} title='{title}' class='{className}'; " +
+            $"expected window=0x{window:X}; focused control=0x{FocusedControl(window):X}";
+    }
+
     private static bool TryEnsureForeground(nint window, nint editWindow)
     {
         var hwnd = new HWND(window);
@@ -80,6 +106,10 @@ public static class ForegroundHelper
         return PInvoke.GetForegroundWindow() == hwnd;
     }
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "GetWindowTextW")]
+    private static extern int GetWindowText(nint hwnd, System.Text.StringBuilder text, int max);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "GetClassNameW")]
+    private static extern int GetClassName(nint hwnd, System.Text.StringBuilder text, int max);
     [DllImport("user32.dll", SetLastError = true)] private static extern bool AttachThreadInput(uint attach, uint attachTo, bool attachState);
     [DllImport("user32.dll", EntryPoint = "BringWindowToTop")] private static extern bool BringWindowToTop(HWND hwnd);
     [DllImport("user32.dll", EntryPoint = "SetFocus")] private static extern HWND SetFocus(nint hwnd);

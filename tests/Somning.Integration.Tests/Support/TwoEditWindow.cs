@@ -40,6 +40,23 @@ public sealed class TwoEditWindow : IDisposable
         _ = SendMessage(Window, WmAppFocusEdit, (nint)index, 0);
     }
 
+    /// <summary>
+    /// Polls until the requested edit is the focused control AND this window is the foreground window.
+    /// FocusEdit marshals to the window thread, so returning from it does not mean focus has moved.
+    /// </summary>
+    public bool WaitUntilFocused(int index, TimeSpan timeout)
+    {
+        var expected = EditHandle(index);
+        var until = DateTime.UtcNow + timeout;
+        do
+        {
+            if (ForegroundHelper.FocusedControl(Window) == expected && ForegroundHelper.ForegroundWindow() == Window)
+                return true;
+            Thread.Sleep(25);
+        } while (DateTime.UtcNow < until);
+        return false;
+    }
+
     public string GetText(int index)
     {
         if ((uint)index >= (uint)Edits.Length) throw new ArgumentOutOfRangeException(nameof(index));

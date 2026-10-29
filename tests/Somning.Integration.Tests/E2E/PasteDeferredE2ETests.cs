@@ -10,6 +10,7 @@ namespace Somning.Integration.Tests.E2E;
 public sealed class PasteDeferredE2ETests
 {
     private const string FixtureName = "tracer/hoje.wav";
+    private static readonly TimeSpan FocusWait = TimeSpan.FromSeconds(3);
 
     [Fact]
     public async Task Foreground_change_after_capture_defers_paste_and_keeps_transcript_on_clipboard()
@@ -23,12 +24,14 @@ public sealed class PasteDeferredE2ETests
         await BeginAndStopAsync(e2e, fixture);
         var target = await e2e.App.WaitEventAsync("target_captured", cursor, null, TimeSpan.FromSeconds(20));
 
-        Assert.True(ForegroundHelper.EnsureForeground(other.Window, other.Edit));
+        Assert.True(ForegroundHelper.EnsureForeground(other.Window, other.Edit),
+            "Could not bring the second Notepad to the foreground. " + ForegroundHelper.Describe(other.Window));
         await e2e.App.ReleaseDeliveryBarrierAsync();
         var outcome = await e2e.App.WaitEventAsync("outcome", target.Seq - 1, target.Id, TimeSpan.FromMinutes(2));
 
-        Assert.Equal("paste_deferred", outcome.Outcome);
-        Assert.Equal("foreground_changed", outcome.Reason);
+        var observed = ForegroundHelper.Describe(other.Window);
+        Assert.True(outcome.Outcome == "paste_deferred", $"Outcome was '{outcome.Outcome}' (reason '{outcome.Reason}'); {observed}");
+        Assert.True(outcome.Reason == "foreground_changed", $"Reason was '{outcome.Reason}'; {observed}");
         Assert.Empty(e2e.Notepad.GetText());
         Assert.Empty(other.GetText());
         Assert.Equal(E2EFixtureSupport.Expected(FixtureName), ClipboardProbe.ReadText());
@@ -40,18 +43,26 @@ public sealed class PasteDeferredE2ETests
         var fixture = E2EFixtureSupport.Fixture(FixtureName);
         using var e2e = await E2EFixtureSupport.StartAsync(fixture);
         using var targetWindow = TwoEditWindow.Start();
-        Assert.True(ForegroundHelper.EnsureForeground(targetWindow.Window, targetWindow.EditHandle(0)));
+        Requires.That(
+            ForegroundHelper.EnsureForegroundFocus(targetWindow.Window, targetWindow.EditHandle(0))
+                && targetWindow.WaitUntilFocused(0, FocusWait),
+            "Could not focus the first edit of the test window. " + ForegroundHelper.Describe(targetWindow.Window));
         await e2e.App.ArmDeliveryBarrierAsync();
         var cursor = await e2e.App.LastSeqAsync();
         await BeginAndStopAsync(e2e, fixture);
         var target = await e2e.App.WaitEventAsync("target_captured", cursor, null, TimeSpan.FromSeconds(20));
 
+        // FocusEdit marshals to the window thread; wait for the observable precondition before releasing the barrier.
         targetWindow.FocusEdit(1);
+        Assert.True(targetWindow.WaitUntilFocused(1, FocusWait),
+            "Second edit never became focused in the foreground test window before releasing the delivery barrier. "
+            + ForegroundHelper.Describe(targetWindow.Window) + $"; expected focus=0x{targetWindow.EditHandle(1):X}");
         await e2e.App.ReleaseDeliveryBarrierAsync();
         var outcome = await e2e.App.WaitEventAsync("outcome", target.Seq - 1, target.Id, TimeSpan.FromMinutes(2));
 
-        Assert.Equal("paste_deferred", outcome.Outcome);
-        Assert.Equal("focus_changed", outcome.Reason);
+        var observed = ForegroundHelper.Describe(targetWindow.Window);
+        Assert.True(outcome.Outcome == "paste_deferred", $"Outcome was '{outcome.Outcome}' (reason '{outcome.Reason}'); {observed}");
+        Assert.True(outcome.Reason == "focus_changed", $"Reason was '{outcome.Reason}'; {observed}");
         Assert.Empty(targetWindow.GetText(0));
         Assert.Empty(targetWindow.GetText(1));
         Assert.Equal(E2EFixtureSupport.Expected(FixtureName), ClipboardProbe.ReadText());

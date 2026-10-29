@@ -59,9 +59,9 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Distribution (DIST)
 
-- [ ] **DIST-01**: User can install Somning via a per-user Windows installer that works on a clean Windows 10 machine without dev tools
+- [x] **DIST-01**: User can install Somning via a per-user Windows installer that works on a clean Windows 10 machine without dev tools
 - [x] **DIST-02**: User can enable start-with-Windows (starts minimized to tray)
-- [ ] **DIST-03**: App keeps working after sleep/resume, lock/unlock and long uptime (hook watchdog/reinstall)
+- [x] **DIST-03**: App keeps working after sleep/resume, lock/unlock and long uptime (hook watchdog/reinstall)
 
 ## v2 Requirements
 
@@ -136,9 +136,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | APP-04 | Phase 2 | Complete |
 | APP-05 | Phase 2 | Complete |
 | APP-06 | Phase 1 | Complete |
-| DIST-01 | Phase 4 | Pending |
+| DIST-01 | Phase 4 | Complete (manual items accepted by owner 2026-10-29) |
 | DIST-02 | Phase 4 | Complete |
-| DIST-03 | Phase 4 | Pending |
+| DIST-03 | Phase 4 | Complete (manual items accepted by owner 2026-10-29) |
 
 **Coverage:**
 - v1 requirements: 35 total

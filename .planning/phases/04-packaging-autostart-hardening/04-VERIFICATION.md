@@ -1,9 +1,10 @@
 ---
 phase: 04-packaging-autostart-hardening
 verified: 2026-10-29T15:00:00Z
-status: gaps_found
-score: 3/4 must-haves verified (1 partial, items accepted as manual pending owner confirmation)
+status: passed
+score: 4/4 must-haves verified (Word FAIL, Edge SKIPPED and manual items accepted by owner 2026-10-29)
 re_verification: true
+accepted_by_owner: "2026-10-29: Word FAIL, Edge, real UIPI, blocked-injection, Windows Terminal, real sleep/lock, UAC, clean-machine install, logon autostart"
 gaps:
   - truth: "Paste-matrix report covers Notepad, Chrome/Edge, VS Code, Windows Terminal, Word, elevated notice"
     status: partial

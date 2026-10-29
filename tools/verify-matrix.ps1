@@ -1,21 +1,83 @@
 param(
     [string]$PackageDir = (Join-Path $PSScriptRoot '..\publish\package'),
     [string]$ModelsDir = (Join-Path $env:LOCALAPPDATA 'Somning\models'),
-    [switch]$SkipE2E
+    [switch]$SkipE2E,
+    [switch]$ConfirmInteractive,
+    [switch]$SelfCheck,
+    [int]$SoakIterations = 50
 )
 
 # Generates .planning\phases\04-packaging-autostart-hardening\PASTE-MATRIX.md from REAL results only.
 # Every row is derived from an executed check; nothing is hardcoded as PASS. Rows that cannot be verified
 # without a human or a privileged desktop are reported as SKIPPED or MANUAL, never PASS.
+#
+# This script drives the REAL desktop (keyboard, clipboard, windows, Notepad, browsers). It refuses to run
+# without -ConfirmInteractive. -SelfCheck is the only non-interactive mode: it sends no input and writes no report.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path $PSScriptRoot -Parent
 $utf8 = New-Object Text.UTF8Encoding($false)
-$reportPath = Join-Path $root '.planning\phases\04-packaging-autostart-hardening\PASTE-MATRIX.md'
+$phaseDir = Join-Path $root '.planning\phases\04-packaging-autostart-hardening'
+$reportPath = Join-Path $phaseDir 'PASTE-MATRIX.md'
+$soakReportPath = Join-Path $phaseDir 'SOAK-REPORT.json'
 $integrationExe = Join-Path $root 'tests\Somning.Integration.Tests\bin\Debug\net10.0-windows\Somning.Integration.Tests.exe'
 $coreExe = Join-Path $root 'tests\Somning.Core.Tests\bin\Debug\net10.0\Somning.Core.Tests.exe'
 $PackageDir = [IO.Path]::GetFullPath($PackageDir)
+
+# Every row runs exactly once so the report reflects first-run results (no retries, nothing hidden).
+$EvidenceAttempts = 1
+
+# Mirrors tests/Somning.Integration.Tests/Paste/PasteTargetCatalog.cs (App Paths registry, then fallback locations).
+function Find-App([string]$Id) {
+    $pf = [Environment]::GetFolderPath('ProgramFiles'); $pf86 = [Environment]::GetFolderPath('ProgramFilesX86')
+    $lad = [Environment]::GetFolderPath('LocalApplicationData')
+    $map = @{
+        chrome = @{ Exe = 'chrome.exe'; Paths = @("$pf\Google\Chrome\Application\chrome.exe", "$pf86\Google\Chrome\Application\chrome.exe", "$lad\Google\Chrome\Application\chrome.exe") }
+        edge   = @{ Exe = 'msedge.exe'; Paths = @("$pf86\Microsoft\Edge\Application\msedge.exe", "$pf\Microsoft\Edge\Application\msedge.exe") }
+        vscode = @{ Exe = 'Code.exe'; Paths = @("$lad\Programs\Microsoft VS Code\Code.exe", "$pf\Microsoft VS Code\Code.exe") }
+        word   = @{ Exe = 'winword.exe'; Paths = @("$pf\Microsoft Office\root\Office16\WINWORD.EXE", "$pf86\Microsoft Office\root\Office16\WINWORD.EXE", "$pf\Microsoft Office\Office16\WINWORD.EXE") }
+    }
+    $entry = $map[$Id]
+    foreach ($hive in 'HKLM:', 'HKCU:') {
+        $key = Join-Path $hive ('SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\' + $entry.Exe)
+        $p = (Get-ItemProperty -LiteralPath $key -ErrorAction SilentlyContinue)
+        $prop = if ($p) { $p.PSObject.Properties['(default)'] } else { $null }
+        if ($prop -and $prop.Value) {
+            $candidate = ([string]$prop.Value).Trim('"')
+            if (Test-Path -LiteralPath $candidate) { return $candidate }
+        }
+    }
+    return ($entry.Paths | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1)
+}
+
+if ($SelfCheck) {
+    Write-Host '=== verify-matrix self-check (non-interactive; no input is sent, no report is written) ===' -ForegroundColor Cyan
+    $problems = @()
+    $tokens = $null; $parseErrors = $null
+    [void][Management.Automation.Language.Parser]::ParseFile($MyInvocation.MyCommand.Path, [ref]$tokens, [ref]$parseErrors)
+    if ($parseErrors -and $parseErrors.Count -gt 0) { $problems += ($parseErrors | ForEach-Object { 'parse error: ' + $_.Message }) }
+    else { Write-Host 'Script parses cleanly.' }
+    foreach ($item in @(@('integration test exe', $integrationExe), @('core test exe', $coreExe),
+                        @('package.ps1 (harness package script)', (Join-Path $PSScriptRoot 'package.ps1')),
+                        @('install.ps1', (Join-Path $PSScriptRoot 'install.ps1')))) {
+        if (Test-Path -LiteralPath $item[1]) { Write-Host ("Found {0}" -f $item[0]) } else { $problems += ("missing {0}: {1}" -f $item[0], $item[1]) }
+    }
+    foreach ($id in 'chrome', 'edge', 'vscode', 'word') {
+        $path = Find-App $id
+        if ($path) { Write-Host ("App {0}: installed ({1})" -f $id, $path) } else { Write-Host ("App {0}: not installed" -f $id) }
+    }
+    if ($problems) { $problems | ForEach-Object { Write-Host "SELF-CHECK PROBLEM: $_" -ForegroundColor Red }; exit 1 }
+    Write-Host 'Self-check OK.' -ForegroundColor Green
+    exit 0
+}
+
+if (-not $ConfirmInteractive) {
+    Write-Host 'tools/verify-matrix.ps1 drives the REAL desktop: it sends keyboard input, replaces the clipboard, opens and closes Notepad,' -ForegroundColor Yellow
+    Write-Host 'browsers, VS Code and Word windows, and installs/uninstalls a temporary copy of the app. Do not run it while the machine is in use.' -ForegroundColor Yellow
+    Write-Host 'Re-run with -ConfirmInteractive to proceed, or with -SelfCheck for a non-interactive check.' -ForegroundColor Yellow
+    exit 3
+}
 
 $results = New-Object 'Collections.Generic.List[object]'
 
@@ -64,6 +126,47 @@ function Add-XunitResult([string]$Category, [string]$Scenario, [string]$Exe, [st
     elseif ($last.Status -eq 'SKIPPED') { $evidence += ' - test skipped, behaviour NOT verified' }
     if ($Attempts -gt 1) { $evidence += ' [' + ($history -join ', ') + ']' }
     Add-Result $Category $Scenario $method $last.Status $evidence
+}
+
+# Runs an xunit v3 runner once with child-process-only environment variables and returns the per-test results
+# parsed from the runner's own xUnit XML output (never class-level counts). Environment is restored afterwards.
+function Invoke-XunitXml([string]$Exe, [string[]]$Filter, [hashtable]$ChildEnv = @{}) {
+    if (-not (Test-Path -LiteralPath $Exe)) {
+        return [pscustomobject]@{ Ran = $false; Exit = -1; Tests = @(); Note = "Test runner not built: $Exe" }
+    }
+    $xmlPath = Join-Path $env:TEMP ('somning-matrix-' + [guid]::NewGuid().ToString('N') + '.xml')
+    $saved = @{}
+    foreach ($k in $ChildEnv.Keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k, 'Process'); [Environment]::SetEnvironmentVariable($k, [string]$ChildEnv[$k], 'Process') }
+    try {
+        & $Exe @Filter -preEnumerateTheories -result-xml $xmlPath 2>&1 | Out-Null
+        $exit = $LASTEXITCODE
+    } finally {
+        foreach ($k in $ChildEnv.Keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k], 'Process') }
+    }
+    if (-not (Test-Path -LiteralPath $xmlPath)) { return [pscustomobject]@{ Ran = $true; Exit = $exit; Tests = @(); Note = "runner produced no XML result (exit $exit)" } }
+    try {
+        [xml]$doc = Get-Content -LiteralPath $xmlPath -Raw -Encoding UTF8
+        $tests = @($doc.SelectNodes('//test') | ForEach-Object {
+            $reason = ''
+            if ($_.SelectSingleNode('reason')) { $reason = $_.SelectSingleNode('reason').InnerText }
+            elseif ($_.SelectSingleNode('failure/message')) { $reason = $_.SelectSingleNode('failure/message').InnerText }
+            [pscustomobject]@{ Name = [string]$_.name; Result = [string]$_.result; Reason = $reason }
+        })
+    } catch {
+        return [pscustomobject]@{ Ran = $true; Exit = $exit; Tests = @(); Note = "unparsable runner XML: $($_.Exception.Message)" }
+    } finally { Remove-Item -LiteralPath $xmlPath -Force -ErrorAction SilentlyContinue }
+    return [pscustomobject]@{ Ran = $true; Exit = $exit; Tests = $tests; Note = '' }
+}
+
+# Maps one executed test result (Pass/Fail/Skip) to a matrix status; no result = FAIL (never silently PASS).
+function Convert-TestStatus($Test, [string]$PassNote, [string]$MissingNote) {
+    if ($null -eq $Test) { return [pscustomobject]@{ Status = 'FAIL'; Evidence = $MissingNote } }
+    $short = $Test.Reason.Trim(); if ($short.Length -gt 300) { $short = $short.Substring(0, 300) + '...' }
+    switch ($Test.Result) {
+        'Pass' { return [pscustomobject]@{ Status = 'PASS'; Evidence = $PassNote } }
+        'Skip' { return [pscustomobject]@{ Status = 'SKIPPED'; Evidence = "skipped, behaviour NOT verified: $short" } }
+        default { return [pscustomobject]@{ Status = 'FAIL'; Evidence = "failed: $short" } }
+    }
 }
 
 Write-Host '=== Somning Paste Matrix & Deployment Verifier ===' -ForegroundColor Cyan
@@ -177,6 +280,64 @@ try {
             Add-Result 'Deployment' 'Uninstall removes app, shortcut, Run key; keeps user data' 'installed uninstall.ps1 -Quiet' 'PASS' 'App dir, shortcut and Run value removed; sentinel file in %LOCALAPPDATA%\Somning\logs preserved'
         } catch { Add-Result 'Deployment' 'Uninstall removes app, shortcut, Run key; keeps user data' 'installed uninstall.ps1 -Quiet' 'FAIL' $_.Exception.Message }
     }
+
+    # -------------------------------------------------------------------------
+    # Part 1b: the INSTALLED harness-enabled binary passes the Phase 1 Notepad E2E (DIST-01 gap).
+    # Runs after the first install lifecycle was uninstalled and its rows were recorded. The harness package is TEST ONLY:
+    # it is installed to a second staged space + non-ASCII directory, WITHOUT a Start Menu shortcut and WITHOUT autostart,
+    # and always uninstalled in finally. Shortcut/Run key backups from Part 1 are restored by the outer finally.
+    # -------------------------------------------------------------------------
+    Write-Host "`n--- Part 1b: Installed harness binary passes Phase 1 E2E into Notepad ---" -ForegroundColor Yellow
+    $stageDir2 = Join-Path $env:TEMP ('Somning Harness ' + [string][char]0x6E2C + [string][char]0x8A66 + ' a' + [string][char]0xE7 + [string][char]0xE3 + 'o ' + [guid]::NewGuid().ToString('N'))
+    $harnessInstallDir = [IO.Path]::GetFullPath((Join-Path $stageDir2 'app'))
+    $e2eScenarios = @(
+        @{ Method = '*DictationE2ETests.TapTap_cmd_curto_delivers_to_notepad_without_layout_or_hotkey_leaks*'; Scenario = 'Installed binary passes Phase 1 E2E into Notepad (tap-tap)' },
+        @{ Method = '*DictationE2ETests.HoldRelease_longo_numeros_requires_full_hold_and_delivers*'; Scenario = 'Installed binary passes Phase 1 E2E into Notepad (hold-release)' }
+    )
+    $harnessInstalled = $false
+    try {
+        $harnessDir = Join-Path $root 'publish\package-harness'
+        $harnessExe = Join-Path $harnessDir 'Somning.App.exe'
+        $stale = -not (Test-Path -LiteralPath $harnessExe)
+        if (-not $stale) {
+            $builtAt = (Get-Item -LiteralPath $harnessExe).LastWriteTimeUtc
+            $newest = Get-ChildItem -Path (Join-Path $root 'src') -Recurse -File -Include *.cs, *.csproj, *.xaml, *.resx -ErrorAction SilentlyContinue |
+                Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' } | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+            $props = Get-Item -LiteralPath (Join-Path $root 'Directory.Build.props') -ErrorAction SilentlyContinue
+            if (($newest -and $newest.LastWriteTimeUtc -gt $builtAt) -or ($props -and $props.LastWriteTimeUtc -gt $builtAt)) { $stale = $true }
+        }
+        if ($stale) {
+            Write-Host 'Harness package missing or older than sources; building it with tools/package.ps1 -WithHarness...'
+            & (Join-Path $PSScriptRoot 'package.ps1') -WithHarness
+        }
+        & (Join-Path $PSScriptRoot 'install.ps1') -SourceDir $harnessDir -InstallDir $harnessInstallDir -StartMenuShortcut:$false -StartWithWindows:$false -Unattended
+        $installedHarnessApp = Join-Path $harnessInstallDir 'Somning.App.exe'
+        if (-not (Test-Path -LiteralPath $installedHarnessApp)) { throw "Harness install did not produce $installedHarnessApp" }
+        $harnessInstalled = $true
+    } catch {
+        foreach ($s in $e2eScenarios) {
+            Add-Result 'Deployment' $s.Scenario 'tools/package.ps1 -WithHarness + install.ps1' 'FAIL' ("harness package install failed: " + $_.Exception.Message)
+        }
+    }
+    if ($harnessInstalled) {
+        try {
+            foreach ($s in $e2eScenarios) {
+                Stop-Process -Name notepad -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 300
+                $run = Invoke-XunitXml $integrationExe @('-method', $s.Method) @{ SOMNING_APP_EXE = $installedHarnessApp; SOMNING_MODELS_DIR = $ModelsDir }
+                $method = 'Somning.Integration.Tests.exe ' + $s.Method + ' (SOMNING_APP_EXE=installed)'
+                $test = $null
+                if ($run.Tests.Count -eq 1) { $test = $run.Tests[0] }
+                $missing = if ($run.Note) { $run.Note } else { "expected exactly 1 test for the filter, matched $($run.Tests.Count) (exit $($run.Exit))" }
+                $mapped = Convert-TestStatus $test ("Real Notepad received the dictated text using installed app '" + $installedHarnessApp + "'") $missing
+                Add-Result 'Deployment' $s.Scenario $method $mapped.Status ($mapped.Evidence + " [installed path: $installedHarnessApp]")
+            }
+        } finally {
+            Get-Process -Name 'Somning.App', 'Somning.Engine' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Milliseconds 500
+            try { & (Join-Path $harnessInstallDir 'uninstall.ps1') -InstallDir $harnessInstallDir -Quiet } catch { Write-Host "Harness uninstall warning: $($_.Exception.Message)" -ForegroundColor Yellow }
+        }
+    }
+    if (Test-Path -LiteralPath $stageDir2) { Remove-Item -LiteralPath $stageDir2 -Recurse -Force -ErrorAction SilentlyContinue }
 } finally {
     Get-Process -Name 'Somning.App', 'Somning.Engine' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     if (Test-Path -LiteralPath $sentinel) { Remove-Item -LiteralPath $sentinel -Force -ErrorAction SilentlyContinue }
@@ -198,33 +359,89 @@ Write-Host "`n--- Part 2: Paste matrix and resilience (xunit-backed) ---" -Foreg
 function Reset-Notepad { Stop-Process -Name notepad -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 300 }
 
 Reset-Notepad
-Add-XunitResult 'Paste' 'Notepad (Win32 Edit): Ctrl+V paste, text stays on clipboard' $integrationExe @('-method', '*Pastes_into_notepad_and_keeps_clipboard*') 1 'Real Notepad received the text; clipboard retained' 3
+Add-XunitResult 'Paste' 'Notepad (Win32 Edit): Ctrl+V paste, text stays on clipboard' $integrationExe @('-method', '*Pastes_into_notepad_and_keeps_clipboard*') 1 'Real Notepad received the text; clipboard retained' $EvidenceAttempts
 Reset-Notepad
-Add-XunitResult 'Paste' 'Foreground window changed before paste: defers, no leakage' $integrationExe @('-method', '*TargetPasterTests.Foreground_changed_defers_and_leaves_text_on_clipboard*') 1 'paste_deferred; text left on clipboard' 3
+Add-XunitResult 'Paste' 'Foreground window changed before paste: defers, no leakage' $integrationExe @('-method', '*TargetPasterTests.Foreground_changed_defers_and_leaves_text_on_clipboard*') 1 'paste_deferred; text left on clipboard' $EvidenceAttempts
 Reset-Notepad
-Add-XunitResult 'Paste' 'Focus moved to another field in same window: defers' $integrationExe @('-method', '*TargetPasterTests.Focus_change_inside_same_top_level_window_defers*') 1 'paste_deferred; no keystrokes injected' 3
+Add-XunitResult 'Paste' 'Focus moved to another field in same window: defers' $integrationExe @('-method', '*TargetPasterTests.Focus_change_inside_same_top_level_window_defers*') 1 'paste_deferred; no keystrokes injected' $EvidenceAttempts
 Reset-Notepad
-Add-XunitResult 'Paste' 'Clipboard changed while waiting for modifiers: defers before injection' $integrationExe @('-method', '*Clipboard_change_during_modifier_wait_defers_before_injection*') 1 'No injection after external copy' 3
+Add-XunitResult 'Paste' 'Clipboard changed while waiting for modifiers: defers before injection' $integrationExe @('-method', '*Clipboard_change_during_modifier_wait_defers_before_injection*') 1 'No injection after external copy' $EvidenceAttempts
 Reset-Notepad
-Add-XunitResult 'Paste' 'Clipboard-only mode (auto-paste off): never pastes' $integrationExe @('-method', '*Copy_only_never_pastes*') 1 'Clipboard set; zero keystrokes injected' 3
+Add-XunitResult 'Paste' 'Clipboard-only mode (auto-paste off): never pastes' $integrationExe @('-method', '*Copy_only_never_pastes*') 1 'Clipboard set; zero keystrokes injected' $EvidenceAttempts
 
 if ($SkipE2E) {
     Add-Result 'Paste' 'Live app E2E: foreground/focus change after capture' 'PasteDeferredE2ETests' 'SKIPPED' '-SkipE2E supplied; not run'
 } else {
     Reset-Notepad
-    Add-XunitResult 'Paste' 'Live app E2E: foreground change after capture defers' $integrationExe @('-method', '*PasteDeferredE2ETests.Foreground_change_after_capture_defers_paste_and_keeps_transcript_on_clipboard*') 1 'Real app + engine + Notepad; outcome paste_deferred / foreground_changed' 3
+    Add-XunitResult 'Paste' 'Live app E2E: foreground change after capture defers' $integrationExe @('-method', '*PasteDeferredE2ETests.Foreground_change_after_capture_defers_paste_and_keeps_transcript_on_clipboard*') 1 'Real app + engine + Notepad; outcome paste_deferred / foreground_changed' $EvidenceAttempts
     Reset-Notepad
-    Add-XunitResult 'Paste' 'Live app E2E: same-window focus change after capture defers' $integrationExe @('-method', '*PasteDeferredE2ETests.Focus_change_inside_same_window_after_capture_defers_paste*') 1 'Real app + engine + Notepad; paste_deferred' 3
+    Add-XunitResult 'Paste' 'Live app E2E: same-window focus change after capture defers' $integrationExe @('-method', '*PasteDeferredE2ETests.Focus_change_inside_same_window_after_capture_defers_paste*') 1 'Real app + engine + Notepad; paste_deferred' $EvidenceAttempts
 }
 
 Reset-Notepad
-Add-XunitResult 'Elevation' 'Process integrity level read (self vs. child Notepad, SYSTEM process)' $integrationExe @('-class', '*IntegrityReaderTests*') 2 'Integrity RID read for real processes; does NOT involve an elevated target window' 3
+Add-XunitResult 'Elevation' 'Process integrity level read (self vs. child Notepad, SYSTEM process)' $integrationExe @('-class', '*IntegrityReaderTests*') 2 'Integrity RID read for real processes; does NOT involve an elevated target window' $EvidenceAttempts
 Add-XunitResult 'Elevation' 'Elevated target defers (PasteGate policy)' $coreExe @('-method', '*PasteGateTests.Target_elevated_defers_target_elevated*', '-method', '*PasteGateTests.Integrity_unknown_defers_integrity_unknown*') 2 'Policy unit tests only (decision logic), not empirical UIPI proof'
 Add-XunitResult 'Elevation' 'Elevated target window, real UIPI behaviour' $integrationExe @('-method', '*Elevated_target_defers_paste_when_a_real_integrity_pair_is_available*') 1 'Real elevated target'
-Add-Result 'Terminal' 'Windows Terminal / console hosts (conhost, WT)' 'none' 'MANUAL' 'No automated test exists for Windows Terminal or console paste; requires a human check (Ctrl+V into Windows Terminal)'
+Add-Result 'Terminal' 'Windows Terminal / console hosts (conhost, WT)' 'none' 'MANUAL' 'No automated test exists for Windows Terminal or console paste; see MANUAL-CHECKLIST.md item 1'
 
-Add-XunitResult 'Resilience' 'Sleep/resume and lock/unlock messages raise events; hook reinstalled' $integrationExe @('-class', '*PowerSessionIntegrationTests*') 3 'WM_POWERBROADCAST / WM_WTSSESSION_CHANGE are POSTED SYNTHETICALLY to the listener window; hook reinstall verified'
-Add-Result 'Resilience' 'Real machine sleep -> wake and real workstation lock -> unlock' 'none' 'MANUAL' 'Not automated: a real suspend/lock would interrupt the agent session; synthetic-message tests above are the only coverage'
+Add-XunitResult 'Resilience' 'Sleep/resume and lock/unlock messages raise events; hook reinstalled' $integrationExe @('-class', '*PowerSessionIntegrationTests*') 3 'WM_POWERBROADCAST / WM_WTSSESSION_CHANGE are POSTED SYNTHETICALLY to the listener window; hook reinstall verified' $EvidenceAttempts
+Add-Result 'Resilience' 'Real machine sleep -> wake and real workstation lock -> unlock' 'none' 'MANUAL' 'Not automated: a real suspend/lock would interrupt the agent session; see MANUAL-CHECKLIST.md items 3 and 4'
+Add-Result 'Elevation' 'Real UIPI against an elevated target window' 'none' 'MANUAL' 'No low/high integrity pair is provisioned unattended; see MANUAL-CHECKLIST.md item 2'
+Add-Result 'Deployment' 'Clean-machine install without .NET SDK, and logon autostart after reboot' 'none' 'MANUAL' 'Needs a clean profile/VM and a reboot; see MANUAL-CHECKLIST.md items 5 and 6'
+
+# --- Hook liveness watchdog (desktop facts). Per-test results from the runner XML; SKIPPED stays SKIPPED. ---
+Reset-Notepad
+$wd = Invoke-XunitXml $integrationExe @('-class', '*HookWatchdogLivenessTests*')
+foreach ($spec in @(
+    @{ Name = 'Silently_removed_hook_is_reinstalled_and_probe_is_seen_again'; Scenario = 'Watchdog: silently removed keyboard hook is reinstalled and probe is seen again'; Pass = 'Real hook silently removed, watchdog reinstalled it, F24 probe seen again' },
+    @{ Name = 'Blocked_injection_is_inconclusive_and_causes_no_reinstall'; Scenario = 'Watchdog: blocked probe injection is inconclusive and causes no reinstall'; Pass = 'Probe injection blocked by a higher-integrity foreground window; no reinstall storm' },
+    @{ Name = 'Fake_probe_loop_reinstalls_only_after_threshold'; Scenario = 'Watchdog: headless fake probe loop reinstalls only after threshold'; Pass = 'Headless fake loop honoured the reinstall threshold' })) {
+    $t = $wd.Tests | Where-Object { $_.Name -like ('*' + $spec.Name + '*') } | Select-Object -First 1
+    $missing = if ($wd.Note) { $wd.Note } else { "no result for $($spec.Name) (runner exit $($wd.Exit))" }
+    $m = Convert-TestStatus $t $spec.Pass $missing
+    Add-Result 'Watchdog' $spec.Scenario ('Somning.Integration.Tests.exe -class *HookWatchdogLivenessTests* :: ' + $spec.Name) $m.Status $m.Evidence
+}
+
+# --- Paste target applications: one row per Theory case, mapped from that case's own result. ---
+Reset-Notepad
+$pasteRun = Invoke-XunitXml $integrationExe @('-method', '*PasteTargetMatrixTests.Pastes_into_target_application*') @{}
+$pasteTests = $pasteRun.Tests
+foreach ($app in @(@('chrome', 'Chrome'), @('edge', 'Edge'), @('vscode', 'VS Code'), @('word', 'Word'))) {
+    $id = $app[0]
+    $t = $pasteTests | Where-Object { $_.Name -match ('"' + [regex]::Escape($id) + '"') } | Select-Object -First 1
+    $missing = if ($pasteRun.Note) { $pasteRun.Note } else { "no result for target '$id' in the runner output (exit $($pasteRun.Exit))" }
+    $m = Convert-TestStatus $t ($app[1] + ' received the pasted sentinel text via Ctrl+V and clipboard read-back matched') $missing
+    if ($m.Status -eq 'SKIPPED' -and $t.Reason -match 'not installed') { $m = [pscustomobject]@{ Status = 'SKIPPED'; Evidence = 'not installed on this machine' } }
+    Add-Result 'Paste' ('Application target: ' + $app[1]) ('PasteTargetMatrixTests.Pastes_into_target_application(' + $id + ')') $m.Status $m.Evidence
+}
+
+# --- Soak: SoakIterations clipboard-only dictations + one real-hotkey dictation. The report is produced by the test. ---
+Reset-Notepad
+$soakWritten = Join-Path $phaseDir 'soak-report.json'
+foreach ($stalePath in @($soakWritten, $soakReportPath)) { if (Test-Path -LiteralPath $stalePath) { Remove-Item -LiteralPath $stalePath -Force } }
+$soakRun = Invoke-XunitXml $integrationExe @('-trait', 'Category=Soak') @{ SOMNING_SOAK_N = [string]$SoakIterations }
+$soakTest = $soakRun.Tests | Where-Object { $_.Name -like '*Fifty_dictations_then_real_hotkey_dictation_stay_healthy*' } | Select-Object -First 1
+try {
+    if (-not (Test-Path -LiteralPath $soakWritten)) { throw 'soak test did not write soak-report.json' }
+    $soakJson = Get-Content -LiteralPath $soakWritten -Raw -Encoding UTF8 | ConvertFrom-Json
+    # Normalise the file name casing to SOAK-REPORT.json via a temp name (the test writes soak-report.json).
+    $tmpName = Join-Path $phaseDir ('soak-report.' + [guid]::NewGuid().ToString('N') + '.tmp')
+    Move-Item -LiteralPath $soakWritten -Destination $tmpName -Force
+    Move-Item -LiteralPath $tmpName -Destination $soakReportPath -Force
+    $hGrow = $soakJson.finalHandles - $soakJson.baselineHandles
+    $bGrow = $soakJson.finalPrivateBytes - $soakJson.baselinePrivateBytes
+    $ev = "requested=$($soakJson.requested) completed=$($soakJson.completed) failures=$($soakJson.failures) handleDelta=$hGrow privateByteDelta=$bGrow " +
+          "hookInstalls=$($soakJson.hookInstallCountStart)->$($soakJson.hookInstallCountEnd) watchdogReinstalls=$($soakJson.watchdogReinstalls) finalRealHotkeyOk=$($soakJson.finalRealHotkeyOk) result=$($soakJson.result)"
+    if ($soakJson.result -ne 'PASS') { $ev += ' reasons=' + (($soakJson.reasons) -join '; ') }
+    $status = if ($soakJson.result -eq 'PASS' -and $soakTest -and $soakTest.Result -eq 'Pass') { 'PASS' }
+              elseif ($soakTest -and $soakTest.Result -eq 'Skip') { 'SKIPPED' } else { 'FAIL' }
+    if ($status -eq 'FAIL' -and $soakJson.result -eq 'PASS') { $ev += ' (report says PASS but the test did not pass)' }
+    Add-Result 'Soak' "Soak: $SoakIterations dictations + real-hotkey dictation, no leaks or failures" 'SoakTests.Fifty_dictations_then_real_hotkey_dictation_stay_healthy; SOAK-REPORT.json' $status $ev
+} catch {
+    $why = $_.Exception.Message
+    if ($soakTest -and $soakTest.Result -eq 'Skip') { Add-Result 'Soak' "Soak: $SoakIterations dictations + real-hotkey dictation" 'SoakTests' 'SKIPPED' ("skipped, no report written: " + $soakTest.Reason.Trim()) }
+    else { Add-Result 'Soak' "Soak: $SoakIterations dictations + real-hotkey dictation" 'SoakTests' 'FAIL' ("missing or unparsable soak report: $why " + $soakRun.Note) }
+}
 
 # -----------------------------------------------------------------------------
 # Part 3: report
@@ -248,7 +465,9 @@ $sb = New-Object Text.StringBuilder
 [void]$sb.AppendLine("**Overall**: $overall  ")
 [void]$sb.AppendLine("**Counts**: PASS=$nPass FAIL=$nFail SKIPPED=$nSkip MANUAL=$nManual  ")
 [void]$sb.AppendLine('')
-[void]$sb.AppendLine('Requirements: **DIST-01** (per-user unattended install) and **DIST-03** (paste matrix, elevated-target handling, sleep/lock resilience).')
+[void]$sb.AppendLine('Requirements: **DIST-01** (per-user unattended install; installed binary passes the Phase 1 E2E), **DIST-02** (retained) and **DIST-03** (soak, hook watchdog, paste matrix incl. Chrome/Edge/VS Code/Word, elevated-target handling, sleep/lock resilience).')
+[void]$sb.AppendLine('')
+[void]$sb.AppendLine('**Attempts per row**: 1 (no retries; first-run results). Soak iterations requested: '+$SoakIterations+'.')
 [void]$sb.AppendLine('')
 [void]$sb.AppendLine('Every row below was produced by an executed check in `tools/verify-matrix.ps1`. Status meanings: PASS = executed and passed; FAIL = executed and failed; SKIPPED = test exists but was skipped (behaviour not verified); MANUAL = no automated check exists, a human must verify.')
 [void]$sb.AppendLine('')
@@ -260,10 +479,11 @@ foreach ($r in $results) {
 [void]$sb.AppendLine('')
 [void]$sb.AppendLine('## Known limits (not verified by this run)')
 [void]$sb.AppendLine('')
-[void]$sb.AppendLine('- Windows Terminal / console paste: no automated test; verify manually.')
-[void]$sb.AppendLine('- Real UIPI against an elevated window: the integration test is skipped (no low/high integrity pair is provisioned unattended); only the PasteGate decision policy is unit tested.')
-[void]$sb.AppendLine('- Real sleep/resume and lock/unlock: only synthetic window messages are tested.')
-[void]$sb.AppendLine('- Clean-machine install (no .NET SDK installed) was not performed; the app is self-contained and was run from an installed copy on this development machine.')
+[void]$sb.AppendLine('Items below remain MANUAL (see `MANUAL-CHECKLIST.md`); SKIPPED rows above (for example an application that is not installed) are also NOT verified.')
+[void]$sb.AppendLine('- Windows Terminal / console paste: no automated test (checklist item 1).')
+[void]$sb.AppendLine('- Real UIPI against an elevated window: only the PasteGate decision policy is unit tested (checklist item 2).')
+[void]$sb.AppendLine('- Real sleep/resume and lock/unlock: only synthetic window messages are tested (checklist items 3 and 4).')
+[void]$sb.AppendLine('- Clean-machine install without the .NET SDK and logon autostart after reboot (checklist items 5 and 6).')
 [void]$sb.AppendLine('')
 [void]$sb.AppendLine('*Generated by `tools/verify-matrix.ps1`.*')
 

@@ -81,3 +81,4 @@ Progress: [██████████] 100%
 | 261029-orb | Orb liquida estilo Siri + robustez do motor (nunca ficar em Transcrevendo, ganho adaptativo de voz) | 2026-10-29 | 1fc9522 | [261029-orb-orb-liquida-estilo-siri-robustez-do-motor](./quick/261029-orb-orb-liquida-estilo-siri-robustez-do-motor/) |
 | 261029-nr6 | Vidro neutro com ondas de voz, lente e legenda translucida | 2026-10-29 | 3237d64 | [261029-nr6-vidro-neutro-com-ondas-de-voz-e-refracao](./quick/261029-nr6-vidro-neutro-com-ondas-de-voz-e-refracao/) |
 | 261029-o9m | Identidade da gota, configuracoes WPF, logo e pacote 1.0.0 | 2026-10-29 | 55579f5 | [261029-o9m-identidade-visual-e-configuracoes-somnin](./quick/261029-o9m-identidade-visual-e-configuracoes-somnin/) |
+| 261029-goo | Entrada viscosa da gota (gosma saindo da borda) e legenda 30% menor | 2026-10-29 | 931a36c | [261029-goo-entrada-viscosa-e-legenda-menor](./quick/261029-goo-entrada-viscosa-e-legenda-menor/) |

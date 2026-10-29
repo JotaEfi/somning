@@ -1,51 +1,37 @@
 namespace Somning.Core.Overlay;
 
 /// <summary>
-/// Turns raw microphone RMS (typically 0.01-0.2 for normal speech, 0.001-0.005 for room noise) into a 0..1 visual
-/// level. Works in dBFS with an adaptive noise floor and an adaptive ceiling, so a quiet voice and a loud voice both
-/// move the orb visibly while room noise stays near zero. One instance per recording.
+/// Adaptive gain for the voice level: maps the raw tracker level (RMS, roughly 0.01-0.2 for normal speech) to a
+/// usable 0..1 drive. A fixed logarithmic curve gives a perceptual scale; a slowly decaying peak reference then
+/// rescales it so quiet and loud microphones both reach the full range. Allocation free.
 /// </summary>
 public sealed class VoiceLevelNormalizer
 {
-    public const float InitialFloorDb = -58f;
-    public const float MinFloorDb = -66f;
-    public const float MaxFloorDb = -46f;
-    public const float FloorMarginDb = 4f;
-    public const float InitialCeilingDb = -24f;
-    public const float MinCeilingDb = -32f;
-    public const float CeilingDecayDbPerSecond = 2f;
-    public const float FloorRiseSeconds = 40f;
+    public const float FloorDb = -52f;
+    public const float CeilingDb = -14f;
+    public const float MinimumReference = 0.45f;
+    public const float ReferenceDecayPerSecond = 0.07f;
 
-    private float floorDb = InitialFloorDb;
-    private float ceilingDb = InitialCeilingDb;
+    private float reference = MinimumReference;
 
-    public float FloorDb => floorDb;
-    public float CeilingDb => ceilingDb;
+    /// <summary>Current peak reference in log-scale units (0..1).</summary>
+    public float Reference => reference;
 
-    public void Reset()
+    /// <summary>Log scale in [0, 1] for a raw level; 0 below the floor.</summary>
+    public static float ToPerceptual(float rawLevel)
     {
-        floorDb = InitialFloorDb;
-        ceilingDb = InitialCeilingDb;
+        if (!(rawLevel > 1e-5f)) return 0f;
+        var db = 20f * MathF.Log10(Math.Min(rawLevel, 1f));
+        return Math.Clamp((db - FloorDb) / (CeilingDb - FloorDb), 0f, 1f);
     }
 
-    /// <summary>Maps one RMS measurement (spanning <paramref name="deltaSeconds"/> of audio) to a level in [0, 1].</summary>
-    public float Normalize(float rms, float deltaSeconds)
+    /// <summary>Feeds one raw level sample and returns the normalized drive in [0, 1].</summary>
+    public float Update(float rawLevel, float deltaSeconds)
     {
-        var dt = Math.Clamp(deltaSeconds, 0.001f, 0.25f);
-        var db = 20f * MathF.Log10(Math.Max(rms, 1e-5f));
-
-        // Noise floor: drops immediately to quieter audio, creeps up very slowly (never follows sustained speech).
-        floorDb = db < floorDb
-            ? floorDb + (db - floorDb) * 0.5f
-            : floorDb + (db - floorDb) * Math.Min(1f, dt / FloorRiseSeconds);
-        floorDb = Math.Clamp(floorDb, MinFloorDb, MaxFloorDb);
-
-        // Ceiling: jumps to louder audio, decays slowly back toward a normal-speech reference.
-        ceilingDb = Math.Max(db, ceilingDb - CeilingDecayDbPerSecond * dt);
-        ceilingDb = Math.Max(ceilingDb, MinCeilingDb);
-
-        var low = floorDb + FloorMarginDb;
-        var span = Math.Max(ceilingDb - low, 12f);
-        return Math.Clamp((db - low) / span, 0f, 1f);
+        var perceptual = ToPerceptual(rawLevel);
+        reference = Math.Max(Math.Max(perceptual, MinimumReference), reference - ReferenceDecayPerSecond * Math.Max(0f, deltaSeconds));
+        return Math.Clamp(perceptual / reference, 0f, 1f);
     }
+
+    public void Reset() => reference = MinimumReference;
 }

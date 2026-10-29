@@ -1,47 +1,39 @@
 namespace Somning.Core.Overlay;
 
 /// <summary>
-/// Damped spring toward a target (semi-implicit Euler with fixed substeps, stable at any frame rate).
-/// An under-damped spring overshoots, which gives the orb its elastic entrance.
+/// Damped harmonic oscillator used for the elastic, jelly-like motion of the drop. Integrated with a fixed
+/// sub-step so that stiff springs stay stable at any frame time. Allocation free.
 /// </summary>
-public sealed class Spring
+public struct Spring
 {
-    private const float SubStepSeconds = 1f / 240f;
+    private const float MaxSubStepSeconds = 1f / 240f;
 
-    public Spring(float stiffness, float damping, float value = 0f)
+    public float Value;
+    public float Velocity;
+
+    public Spring(float value)
     {
-        Stiffness = stiffness;
-        Damping = damping;
         Value = value;
-        Target = value;
+        Velocity = 0f;
     }
 
-    public float Stiffness { get; set; }
-    public float Damping { get; set; }
-    public float Value { get; private set; }
-    public float Velocity { get; private set; }
-    public float Target { get; set; }
-
-    /// <summary>Damping ratio: below 1 the spring overshoots.</summary>
-    public float DampingRatio => Damping / (2f * MathF.Sqrt(Stiffness));
+    /// <summary>Advances toward <paramref name="target"/> with angular frequency <paramref name="omega"/> and damping ratio <paramref name="zeta"/>.</summary>
+    public void Step(float target, float omega, float zeta, float deltaSeconds)
+    {
+        if (deltaSeconds <= 0f) return;
+        var steps = (int)MathF.Ceiling(deltaSeconds / MaxSubStepSeconds);
+        var h = deltaSeconds / steps;
+        for (var i = 0; i < steps; i++)
+        {
+            var acceleration = omega * omega * (target - Value) - 2f * zeta * omega * Velocity;
+            Velocity += acceleration * h;
+            Value += Velocity * h;
+        }
+    }
 
     public void Reset(float value)
     {
         Value = value;
         Velocity = 0f;
-        Target = value;
-    }
-
-    public void Step(float deltaSeconds)
-    {
-        if (deltaSeconds <= 0f) return;
-        var steps = Math.Max(1, (int)MathF.Ceiling(deltaSeconds / SubStepSeconds));
-        var h = deltaSeconds / steps;
-        for (var i = 0; i < steps; i++)
-        {
-            var accel = Stiffness * (Target - Value) - Damping * Velocity;
-            Velocity += accel * h;
-            Value += Velocity * h;
-        }
     }
 }

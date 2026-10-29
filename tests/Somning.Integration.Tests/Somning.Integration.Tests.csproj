@@ -1,3 +1,3 @@
 <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0-windows</TargetFramework><OutputType>Exe</OutputType><AllowUnsafeBlocks>true</AllowUnsafeBlocks></PropertyGroup><ItemGroup><PackageReference Include="xunit.v3" /><PackageReference Include="Microsoft.Windows.CsWin32" PrivateAssets="all" /><ProjectReference Include="../../src/Somning.Core/Somning.Core.csproj" /><ProjectReference Include="../../src/Somning.Engine.Protocol/Somning.Engine.Protocol.csproj" /><ProjectReference Include="../../src/Somning.Platform.Windows/Somning.Platform.Windows.csproj" /><ProjectReference Include="../../src/Somning.Engine/Somning.Engine.csproj" ReferenceOutputAssembly="false" /></ItemGroup><ItemGroup>
   <ProjectReference Include="..\..\src\Somning.App\Somning.App.csproj" />
-</ItemGroup><ItemGroup><Compile Include="../Somning.Core.Tests/Overlay/PngWriter.cs" Link="Overlay/PngWriter.cs" /></ItemGroup></Project>
+</ItemGroup></Project>

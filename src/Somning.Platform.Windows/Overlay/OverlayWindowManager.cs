@@ -7,7 +7,7 @@ namespace Somning.Platform.Windows.Overlay;
 
 public sealed class OverlayWindowManager : IOverlayView
 {
-    private const string WindowClassName = "Somning_Overlay_Orb_Window";
+    private const string WindowClassName = "Somning_Overlay_Drop_Window";
     private const uint WmApp = 0x8000;
     private const uint WmAppUpdate = WmApp + 101;
     private const uint WmAppQuit = WmApp + 102;
@@ -35,10 +35,6 @@ public sealed class OverlayWindowManager : IOverlayView
     private const uint Infinite = 0xFFFFFFFF;
     private const long FrameIntervalMs = 16; // ~60 fps
 
-    private const int DtSingleLine = 0x00000020;
-    private const int DtVCenter = 0x00000004;
-    private const int DtEndEllipsis = 0x00008000;
-
     private readonly Thread staThread;
     private readonly TaskCompletionSource<nint> ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly ConcurrentQueue<Action> actionQueue = new();
@@ -49,21 +45,19 @@ public sealed class OverlayWindowManager : IOverlayView
     private readonly WindowProcedure wndProcDelegate;
 
     // Render-thread-only animation state (touched exclusively from the overlay STA thread).
-    private readonly OrbAnimator animator = new();
-    private readonly OrbRenderer renderer = new();
-    private OverlayViewModel displayModel = OverlayViewModel.CreateHidden();
-    private float pendingLevel;     // written by the audio thread (Volatile), read by the render thread
-    private CaptionState captionState;
+    private readonly OverlayAnimator animator = new();
+    private readonly DropRenderer renderer = new();
+    private float pendingLevel = -1f;   // written by the audio thread, read by the render thread; -1 = none
     private long lastTick;
     private bool windowShown;
-    private bool placementDirty;
+    private int anchorCenterX, anchorBottom;
     private int layoutX, layoutY, layoutWidth, layoutHeight;
     private float dpiScale = 1f;
+    private TextMask textMask = TextMask.Empty;
+    private TextMask captionMask = TextMask.Empty;
+    private float noticeHalfWidth;
     private nint surfaceDc, surfaceBitmap, surfaceOldBitmap, surfaceBits;
     private int surfaceWidth, surfaceHeight;
-
-    [ThreadStatic] private static nint cachedFont;
-    [ThreadStatic] private static int cachedFontHeight;
 
     public OverlayWindowManager()
     {
@@ -106,7 +100,7 @@ public sealed class OverlayWindowManager : IOverlayView
     {
         if (disposed) return;
         currentModel = model;
-        if (model.Mode != OverlayMode.Listening) Volatile.Write(ref pendingLevel, 0f);
+        if (model.Mode != OverlayMode.Listening) Volatile.Write(ref pendingLevel, -1f);
         actionQueue.Enqueue(() => ApplyModel(model));
         if (threadId != 0)
         {
@@ -262,13 +256,21 @@ public sealed class OverlayWindowManager : IOverlayView
 
         if (!animator.IsActive) lastTick = Stopwatch.GetTimestamp();
 
-        ComputeLayout();
-        displayModel = model;
+        ComputeAnchor();
+        if (model.Mode == OverlayMode.Notice)
+        {
+            textMask = TextMask.Create(model.Text ?? string.Empty, (int)Math.Round(15 * dpiScale));
+            noticeHalfWidth = DropLayout.NoticeHalfWidth(textMask.Width, dpiScale);
+        }
+        else if (model.Mode == OverlayMode.Transcribing)
+        {
+            captionMask = TextMask.Create(model.Text ?? string.Empty, (int)Math.Round(13 * dpiScale));
+        }
+
         animator.Show(model.Mode);
-        if (model.Mode == OverlayMode.Listening) animator.SetLevel(AudioLevelTracker.LevelFromBars(model.Bars));
     }
 
-    private void ComputeLayout()
+    private void ComputeAnchor()
     {
         var fgHwnd = GetForegroundWindow();
         var monitor = MonitorFromWindow(fgHwnd != 0 ? fgHwnd : GetDesktopWindow(), MonitorDefaultToNearest);
@@ -280,14 +282,9 @@ public sealed class OverlayWindowManager : IOverlayView
         if (dpi == 0) dpi = 96;
         dpiScale = dpi / 96.0f;
 
-        var layout = OrbLayout.Scaled(dpiScale);
-        layoutWidth = layout.Width;
-        layoutHeight = layout.Height;
-
         // Bottom center of the active monitor work area.
-        layoutX = mi.rcWork.left + (mi.rcWork.right - mi.rcWork.left - layoutWidth) / 2;
-        layoutY = mi.rcWork.bottom - layoutHeight - (int)Math.Round(8 * dpiScale);
-        placementDirty = true;
+        anchorCenterX = mi.rcWork.left + (mi.rcWork.right - mi.rcWork.left) / 2;
+        anchorBottom = mi.rcWork.bottom - (int)Math.Round(14 * dpiScale);
     }
 
     private void StepFrame(long now)
@@ -295,7 +292,8 @@ public sealed class OverlayWindowManager : IOverlayView
         var dt = (float)((now - lastTick) / (double)Stopwatch.Frequency);
         lastTick = now;
 
-        if (animator.Frame.Mode == OverlayMode.Listening) animator.SetLevel(Volatile.Read(ref pendingLevel));
+        var level = Volatile.Read(ref pendingLevel);
+        if (level >= 0f && animator.Frame.Mode == OverlayMode.Listening) animator.SetLevel(level);
 
         if (!animator.Tick(dt)) return;
         DrawFrame();
@@ -309,7 +307,14 @@ public sealed class OverlayWindowManager : IOverlayView
 
     private void DrawFrame()
     {
-        if (hwnd == 0 || layoutWidth <= 0 || layoutHeight <= 0) return;
+        if (hwnd == 0) return;
+
+        var frame = animator.Frame;
+        var (width, height) = DropLayout.WindowSize(dpiScale, frame.Morph > 0.01f, textMask.Width);
+        layoutWidth = width;
+        layoutHeight = height;
+        layoutX = anchorCenterX - width / 2;
+        layoutY = anchorBottom - height;
 
         var screenDc = GetDC(0);
         if (screenDc == 0) return;
@@ -321,7 +326,7 @@ public sealed class OverlayWindowManager : IOverlayView
             unsafe
             {
                 var pixels = new Span<uint>((void*)surfaceBits, layoutWidth * layoutHeight);
-                RenderToBuffer(renderer, pixels, layoutWidth, layoutHeight, dpiScale, displayModel, animator.Frame, surfaceDc, ref captionState);
+                renderer.Render(pixels, layoutWidth, layoutHeight, dpiScale, in frame, textMask, noticeHalfWidth, captionMask);
             }
 
             var ptSrc = new POINT { X = 0, Y = 0 };
@@ -337,12 +342,11 @@ public sealed class OverlayWindowManager : IOverlayView
 
             UpdateLayeredWindow(hwnd, screenDc, ref ptDest, ref size, surfaceDc, ref ptSrc, 0, ref blend, UlwAlpha);
 
-            if (!windowShown || placementDirty)
+            if (!windowShown)
             {
                 ShowWindow(hwnd, SwShowNoActivate);
                 SetWindowPos(hwnd, -1 /* HWND_TOPMOST */, layoutX, layoutY, layoutWidth, layoutHeight, SwpNoActivate | SwpShowWindow);
                 windowShown = true;
-                placementDirty = false;
             }
         }
         finally
@@ -399,117 +403,19 @@ public sealed class OverlayWindowManager : IOverlayView
         surfaceHeight = 0;
     }
 
-    private void ReleaseResources()
+    private void ReleaseResources() => ReleaseSurface();
+
+    /// <summary>Renders a settled frame for the model into a premultiplied ARGB buffer (headless, no window).</summary>
+    public static void RenderToBuffer(Span<uint> pixels, int width, int height, float scale, OverlayViewModel model)
     {
-        ReleaseSurface();
-        if (cachedFont != 0)
-        {
-            DeleteObject(cachedFont);
-            cachedFont = 0;
-            cachedFontHeight = 0;
-        }
-    }
-
-    // ---- Software rendering (pure pixel work, unit-testable without a window) ----
-
-    /// <summary>Cached caption metrics so the plate width is measured once per text, not once per frame.</summary>
-    public struct CaptionState
-    {
-        internal string? Text;
-        internal int FontHeight;
-        internal int PlateWidth;
-    }
-
-    /// <summary>Renders a static orb frame (no caption text) into a premultiplied BGRA buffer.</summary>
-    public static void RenderToBuffer(Span<uint> pixels, int width, int height, float scale, OverlayViewModel model, nint memDc = 0)
-    {
-        var state = new CaptionState();
-        RenderToBuffer(new OrbRenderer(), pixels, width, height, scale, model, OrbFrame.Static(model.Mode, 0.3f), memDc, ref state);
-    }
-
-    public static void RenderToBuffer(
-        OrbRenderer orb, Span<uint> pixels, int width, int height, float scale,
-        OverlayViewModel model, in OrbFrame frame, nint memDc, ref CaptionState caption)
-    {
-        var text = ShouldShowCaption(frame.Mode) ? model.Text ?? string.Empty : string.Empty;
-        var plateWidth = 0;
-        if (memDc != 0 && text.Length > 0)
-        {
-            var fontHeight = (int)Math.Round(13 * scale);
-            if (!string.Equals(caption.Text, text, StringComparison.Ordinal) || caption.FontHeight != fontHeight)
-            {
-                caption = new CaptionState { Text = text, FontHeight = fontHeight, PlateWidth = MeasurePlate(memDc, text, fontHeight, width, scale) };
-            }
-
-            plateWidth = caption.PlateWidth;
-        }
-
-        orb.Render(pixels, width, height, scale, in frame, plateWidth);
-
-        if (plateWidth > 0)
-        {
-            RenderText(memDc, pixels, width, height, scale, text, plateWidth, caption.FontHeight);
-        }
-    }
-
-    // Listening needs no words (the orb is the cue); transcribing and every notice keep a small legible caption.
-    private static bool ShouldShowCaption(OverlayMode mode) => mode is OverlayMode.Transcribing or OverlayMode.Notice;
-
-    private static nint EnsureFont(int fontHeight)
-    {
-        if (cachedFont == 0 || cachedFontHeight != fontHeight)
-        {
-            if (cachedFont != 0) DeleteObject(cachedFont);
-            cachedFont = CreateFontW(-fontHeight, 0, 0, 0, 600 /* FW_SEMIBOLD */, 0, 0, 0, 1 /* DEFAULT_CHARSET */, 0, 0, 0, 0, "Segoe UI");
-            cachedFontHeight = fontHeight;
-        }
-
-        return cachedFont;
-    }
-
-    private static int MeasurePlate(nint memDc, string text, int fontHeight, int width, float scale)
-    {
-        const int DtCalcRect = 0x00000400;
-        var oldFont = SelectObject(memDc, EnsureFont(fontHeight));
-        var rect = new RECT { left = 0, top = 0, right = width, bottom = fontHeight * 2 };
-        DrawTextW(memDc, text, text.Length, ref rect, DtSingleLine | DtCalcRect);
-        SelectObject(memDc, oldFont);
-        var padded = rect.right - rect.left + (int)Math.Round(28 * scale);
-        return Math.Clamp(padded, (int)Math.Round(60 * scale), width - (int)Math.Round(8 * scale));
-    }
-
-    private static void RenderText(nint memDc, Span<uint> pixels, int width, int height, float scale, string text, int plateWidth, int fontHeight)
-    {
-        const int DtCenter = 0x00000001;
-        var layout = OrbLayout.Scaled(scale);
-        var oldFont = SelectObject(memDc, EnsureFont(fontHeight));
-        SetBkMode(memDc, 1 /* TRANSPARENT */);
-        SetTextColor(memDc, 0x00FFFFFF); // white; coverage is recovered from the color channels below
-
-        var padding = (int)Math.Round(12 * scale);
-        var left = (width - plateWidth) / 2 + padding;
-        var top = (int)Math.Round(layout.CaptionCenterY - layout.CaptionHeight / 2f);
-        var rect = new RECT { left = left, top = top, right = left + plateWidth - 2 * padding, bottom = top + (int)Math.Round(layout.CaptionHeight) };
-        DrawTextW(memDc, text, text.Length, ref rect, DtSingleLine | DtVCenter | DtCenter | DtEndEllipsis);
-        SelectObject(memDc, oldFont);
-
-        // GDI leaves the alpha channel alone, so any channel brighter than alpha is text coverage: lift alpha to it
-        // (premultiplied pixels must satisfy rgb <= alpha).
-        var y0 = Math.Max(0, rect.top);
-        var y1 = Math.Min(height, rect.bottom);
-        var x0 = Math.Max(0, rect.left);
-        var x1 = Math.Min(width, rect.right);
-        for (var y = y0; y < y1; y++)
-        {
-            for (var x = x0; x < x1; x++)
-            {
-                var idx = y * width + x;
-                var value = pixels[idx];
-                var alpha = value >> 24;
-                var peak = Math.Max((value >> 16) & 0xFF, Math.Max((value >> 8) & 0xFF, value & 0xFF));
-                if (peak > alpha) pixels[idx] = (peak << 24) | (value & 0x00FFFFFF);
-            }
-        }
+        var frame = DropFrame.Static(model.Mode);
+        var mask = model.Mode == OverlayMode.Notice
+            ? TextMask.Create(model.Text ?? string.Empty, (int)Math.Round(15 * scale))
+            : TextMask.Empty;
+        var caption = model.Mode == OverlayMode.Transcribing
+            ? TextMask.Create(model.Text ?? string.Empty, (int)Math.Round(13 * scale))
+            : TextMask.Empty;
+        new DropRenderer().Render(pixels, width, height, scale, in frame, mask, DropLayout.NoticeHalfWidth(mask.Width, scale), caption);
     }
 
     public void Dispose()
@@ -658,12 +564,4 @@ public sealed class OverlayWindowManager : IOverlayView
     [DllImport("gdi32.dll")] private static extern nint SelectObject(nint hdc, nint hgdiobj);
     [DllImport("gdi32.dll")] private static extern bool DeleteObject(nint hObject);
     [DllImport("gdi32.dll")] private static extern nint CreateDIBSection(nint hdc, ref BITMAPINFO pbmi, uint iUsage, out nint ppvBits, nint hSection, uint dwOffset);
-    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
-    private static extern nint CreateFontW(int cHeight, int cWidth, int cEscapement, int cOrientation, int cWeight,
-        uint bItalic, uint bUnderline, uint bStrikeOut, uint iCharSet, uint iOutPrecision, uint iClipPrecision,
-        uint iQuality, uint iPitchAndFamily, string pszFaceName);
-    [DllImport("gdi32.dll")] private static extern int SetBkMode(nint hdc, int mode);
-    [DllImport("gdi32.dll")] private static extern uint SetTextColor(nint hdc, uint color);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    private static extern int DrawTextW(nint hdc, string lpchText, int cchText, ref RECT lprc, uint format);
 }

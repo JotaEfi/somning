@@ -125,8 +125,9 @@ public sealed class OverlayRobustnessTests : IAsyncLifetime
         effects.Run([new StopCapture("tone")]);
         await WaitFor<CaptureStopped>(e => e.Id == "tone");
 
-        var peak = overlay.PeakLevel;
-        Assert.True(peak > 0.5f, $"normal speech only reached visual level {peak}");
+        // The animator applies the perceptual gain to the raw level the sink delivers.
+        var drive = new VoiceLevelNormalizer().Update(overlay.PeakLevel, 0.03f);
+        Assert.True(drive > 0.5f, $"normal speech only reached visual level {drive}");
     }
 
     private sealed class RecordingOverlay : IOverlayView

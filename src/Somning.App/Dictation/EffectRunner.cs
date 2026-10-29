@@ -173,7 +173,7 @@ public sealed class EffectRunner : IAsyncDisposable
         var activeOverlay = getOverlay?.Invoke();
         if (activeOverlay is not null && audioTracker is not null)
         {
-            sink = new OverlayAudioSink(writer, audioTracker, activeOverlay, new VoiceLevelNormalizer());
+            sink = new OverlayAudioSink(writer, audioTracker, activeOverlay);
         }
         var session = new CaptureSession(id, writer, source, started.Task, sink) { WavPath = wavPath };
         source.Faulted += fault => OnFaulted(session, fault);
@@ -457,18 +457,16 @@ public sealed class EffectRunner : IAsyncDisposable
     }
 
     /// <summary>
-    /// Feeds the orb: raw RMS is gain-normalized per recording (real microphone speech is only ~0.01-0.2 RMS, which
-    /// a linear 0..1 mapping leaves nearly invisible), then smoothed by the tracker.
+    /// Feeds the drop with the raw smoothed RMS; the overlay animator applies the perceptual (dB) gain, so the level is
+    /// normalized exactly once (real microphone speech is only ~0.01-0.2 RMS).
     /// </summary>
-    private sealed class OverlayAudioSink(IPcmSink inner, AudioLevelTracker tracker, IOverlayView overlay, VoiceLevelNormalizer normalizer) : IPcmSink
+    private sealed class OverlayAudioSink(IPcmSink inner, AudioLevelTracker tracker, IOverlayView overlay) : IPcmSink
     {
-        private const float BytesPerSecond = 32000f; // 16 kHz mono PCM16
-
         public void Write(ReadOnlySpan<byte> pcm16kMonoS16)
         {
             inner.Write(pcm16kMonoS16);
-            var level = normalizer.Normalize(AudioLevelCalculator.ComputeRms(pcm16kMonoS16), pcm16kMonoS16.Length / BytesPerSecond);
-            overlay.UpdateWaveform(tracker.GenerateWaveformBars(5, tracker.Update(level)));
+            tracker.Update(pcm16kMonoS16);
+            overlay.UpdateWaveform(tracker.GenerateWaveformBars(5));
         }
     }
 }

@@ -29,6 +29,12 @@ public sealed class OverlayWindowManager : IOverlayView
     private const byte AcSrcAlpha = 0x01;
     private const uint MonitorDefaultToNearest = 2;
 
+    private const uint PmRemove = 0x0001;
+    private const uint WmQuit = 0x0012;
+    private const uint QsAllInput = 0x04FF;
+    private const uint Infinite = 0xFFFFFFFF;
+    private const long FrameIntervalMs = 16; // ~60 fps
+
     private const int DtSingleLine = 0x00000020;
     private const int DtVCenter = 0x00000004;
     private const int DtLeft = 0x00000000;
@@ -42,6 +48,22 @@ public sealed class OverlayWindowManager : IOverlayView
     private bool disposed;
     private OverlayViewModel currentModel = OverlayViewModel.CreateHidden();
     private readonly WindowProcedure wndProcDelegate;
+
+    // Render-thread-only animation state (touched exclusively from the overlay STA thread).
+    private readonly OverlayAnimator animator = new();
+    private OverlayViewModel displayModel = OverlayViewModel.CreateHidden();
+    private float[]? pendingBars;   // written by the audio thread, read by the render thread
+    private float[]? appliedBars;
+    private long lastTick;
+    private bool windowShown;
+    private bool placementDirty;
+    private int layoutX, layoutY, layoutWidth, layoutHeight;
+    private float dpiScale = 1f;
+    private nint surfaceDc, surfaceBitmap, surfaceOldBitmap, surfaceBits;
+    private int surfaceWidth, surfaceHeight;
+
+    [ThreadStatic] private static nint cachedFont;
+    [ThreadStatic] private static int cachedFontHeight;
 
     public OverlayWindowManager()
     {
@@ -62,40 +84,30 @@ public sealed class OverlayWindowManager : IOverlayView
 
     public void ShowListening(float[] waveformBars)
     {
-        var model = OverlayViewModel.CreateListening(waveformBars);
-        PostModelUpdate(model);
+        Volatile.Write(ref pendingBars, waveformBars);
+        PostModelUpdate(OverlayViewModel.CreateListening(waveformBars));
     }
 
     public void UpdateWaveform(float[] waveformBars)
     {
-        if (currentModel.Mode != OverlayMode.Listening) return;
-        var model = OverlayViewModel.CreateListening(waveformBars);
-        PostModelUpdate(model);
+        if (disposed || currentModel.Mode != OverlayMode.Listening) return;
+        currentModel = OverlayViewModel.CreateListening(waveformBars);
+        // Picked up by the next animation frame; no queue traffic per audio buffer.
+        Volatile.Write(ref pendingBars, waveformBars);
     }
 
-    public void ShowTranscribing()
-    {
-        var model = OverlayViewModel.CreateTranscribing();
-        PostModelUpdate(model);
-    }
+    public void ShowTranscribing() => PostModelUpdate(OverlayViewModel.CreateTranscribing());
 
-    public void ShowNotice(OverlayNoticeKind kind)
-    {
-        var model = OverlayViewModel.CreateNotice(kind);
-        PostModelUpdate(model);
-    }
+    public void ShowNotice(OverlayNoticeKind kind) => PostModelUpdate(OverlayViewModel.CreateNotice(kind));
 
-    public void Hide()
-    {
-        var model = OverlayViewModel.CreateHidden();
-        PostModelUpdate(model);
-    }
+    public void Hide() => PostModelUpdate(OverlayViewModel.CreateHidden());
 
     private void PostModelUpdate(OverlayViewModel model)
     {
         if (disposed) return;
         currentModel = model;
-        actionQueue.Enqueue(() => RenderModel(model));
+        if (model.Mode != OverlayMode.Listening) Volatile.Write(ref pendingBars, null);
+        actionQueue.Enqueue(() => ApplyModel(model));
         if (threadId != 0)
         {
             PostThreadMessageW(threadId, WmAppUpdate, 0, 0);
@@ -135,29 +147,84 @@ public sealed class OverlayWindowManager : IOverlayView
 
         ready.TrySetResult(createdHwnd);
 
-        while (GetMessage(out var msg, 0, 0, 0) > 0)
-        {
-            if (msg.Msg == WmAppUpdate)
-            {
-                while (actionQueue.TryDequeue(out var action))
-                {
-                    try { action(); }
-                    catch (Exception ex) { Trace.WriteLine($"Overlay action failed: {ex}"); }
-                }
-            }
-            else if (msg.Msg == WmAppQuit)
-            {
-                break;
-            }
+        RunAnimationLoop();
 
-            TranslateMessage(in msg);
-            DispatchMessage(in msg);
-        }
-
+        ReleaseResources();
         if (hwnd != 0)
         {
             DestroyWindow(hwnd);
             hwnd = 0;
+        }
+    }
+
+    /// <summary>
+    /// Message loop that doubles as the ~60 fps frame clock while the pill is visible or fading, and blocks
+    /// without waking while hidden. Never activates or focuses the window.
+    /// </summary>
+    private void RunAnimationLoop()
+    {
+        var timerRaised = false;
+        var quit = false;
+
+        while (!quit)
+        {
+            while (PeekMessage(out var msg, 0, 0, 0, PmRemove))
+            {
+                if (msg.Msg == WmAppQuit || msg.Msg == WmQuit)
+                {
+                    quit = true;
+                    break;
+                }
+
+                TranslateMessage(in msg);
+                DispatchMessage(in msg);
+            }
+
+            if (quit) break;
+
+            DrainActions();
+
+            var frameStart = Stopwatch.GetTimestamp();
+            if (animator.IsActive)
+            {
+                if (!timerRaised)
+                {
+                    timeBeginPeriod(1);
+                    timerRaised = true;
+                }
+
+                StepFrame(frameStart);
+            }
+
+            if (!animator.IsActive)
+            {
+                if (timerRaised)
+                {
+                    timeEndPeriod(1);
+                    timerRaised = false;
+                }
+
+                if (windowShown) HideWindow();
+            }
+
+            MsgWaitForMultipleObjects(0, 0, false, animator.IsActive ? FrameWaitMs(frameStart) : Infinite, QsAllInput);
+        }
+
+        if (timerRaised) timeEndPeriod(1);
+    }
+
+    private static uint FrameWaitMs(long frameStart)
+    {
+        var elapsedMs = (Stopwatch.GetTimestamp() - frameStart) * 1000 / Stopwatch.Frequency;
+        return (uint)Math.Clamp(FrameIntervalMs - elapsedMs, 1, FrameIntervalMs);
+    }
+
+    private void DrainActions()
+    {
+        while (actionQueue.TryDequeue(out var action))
+        {
+            try { action(); }
+            catch (Exception ex) { Trace.WriteLine($"Overlay action failed: {ex}"); }
         }
     }
 
@@ -181,17 +248,28 @@ public sealed class OverlayWindowManager : IOverlayView
         }
     }
 
-    private void RenderModel(OverlayViewModel model)
+    // ---- Render-thread state changes (called from the pump thread only) ----
+
+    private void ApplyModel(OverlayViewModel model)
     {
         if (hwnd == 0) return;
 
         if (model.Mode == OverlayMode.Hidden)
         {
-            ShowWindow(hwnd, SwHide);
+            animator.Hide();
             return;
         }
 
-        // Active monitor and DPI
+        if (!animator.IsActive) lastTick = Stopwatch.GetTimestamp();
+
+        ComputeLayout(model.Mode);
+        displayModel = model;
+        animator.Show(model.Mode);
+        if (model.Mode == OverlayMode.Listening) animator.SetLiveBars(model.Bars);
+    }
+
+    private void ComputeLayout(OverlayMode mode)
+    {
         var fgHwnd = GetForegroundWindow();
         var monitor = MonitorFromWindow(fgHwnd != 0 ? fgHwnd : GetDesktopWindow(), MonitorDefaultToNearest);
 
@@ -200,88 +278,77 @@ public sealed class OverlayWindowManager : IOverlayView
 
         uint dpi = GetDpiForWindow(hwnd);
         if (dpi == 0) dpi = 96;
-        float scale = dpi / 96.0f;
+        dpiScale = dpi / 96.0f;
 
-        // Size calculation
-        int baseWidth = model.Mode == OverlayMode.Notice ? 280 : 220;
-        int width = (int)Math.Round(baseWidth * scale);
-        int height = (int)Math.Round(44 * scale);
+        int baseWidth = mode == OverlayMode.Notice ? 280 : 220;
+        layoutWidth = (int)Math.Round(baseWidth * dpiScale);
+        layoutHeight = (int)Math.Round(44 * dpiScale);
 
-        // Position: bottom center of active monitor work area
-        int posX = mi.rcWork.left + (mi.rcWork.right - mi.rcWork.left - width) / 2;
-        int posY = mi.rcWork.bottom - height - (int)Math.Round(36 * scale);
+        // Bottom center of the active monitor work area.
+        layoutX = mi.rcWork.left + (mi.rcWork.right - mi.rcWork.left - layoutWidth) / 2;
+        layoutY = mi.rcWork.bottom - layoutHeight - (int)Math.Round(36 * dpiScale);
+        placementDirty = true;
+    }
+
+    private void StepFrame(long now)
+    {
+        var dt = (float)((now - lastTick) / (double)Stopwatch.Frequency);
+        lastTick = now;
+
+        var bars = Volatile.Read(ref pendingBars);
+        if (bars is not null && animator.Frame.Mode == OverlayMode.Listening && !ReferenceEquals(bars, appliedBars))
+        {
+            animator.SetLiveBars(bars);
+            appliedBars = bars;
+        }
+
+        if (!animator.Tick(dt)) return;
+        DrawFrame();
+    }
+
+    private void HideWindow()
+    {
+        ShowWindow(hwnd, SwHide);
+        windowShown = false;
+        appliedBars = null;
+    }
+
+    private void DrawFrame()
+    {
+        if (hwnd == 0 || layoutWidth <= 0 || layoutHeight <= 0) return;
 
         var screenDc = GetDC(0);
         if (screenDc == 0) return;
 
         try
         {
-            var memDc = CreateCompatibleDC(screenDc);
-            if (memDc == 0) return;
+            if (!EnsureSurface(screenDc, layoutWidth, layoutHeight)) return;
 
-            try
+            unsafe
             {
-                var bmi = new BITMAPINFO();
-                bmi.bmiHeader.biSize = (uint)Marshal.SizeOf<BITMAPINFOHEADER>();
-                bmi.bmiHeader.biWidth = width;
-                bmi.bmiHeader.biHeight = -height; // Top-down
-                bmi.bmiHeader.biPlanes = 1;
-                bmi.bmiHeader.biBitCount = 32;
-                bmi.bmiHeader.biCompression = 0; // BI_RGB
-
-                var hBitmap = CreateDIBSection(screenDc, ref bmi, 0, out var pBits, 0, 0);
-                if (hBitmap == 0 || pBits == 0) return;
-
-                try
-                {
-                    var hOldBmp = SelectObject(memDc, hBitmap);
-
-                    unsafe
-                    {
-                        var pixels = new Span<uint>((void*)pBits, width * height);
-                        RenderToBuffer(pixels, width, height, scale, model, memDc);
-                    }
-
-                    // 5. UpdateLayeredWindow
-                    var ptSrc = new POINT { X = 0, Y = 0 };
-                    var ptDest = new POINT { X = posX, Y = posY };
-                    var size = new SIZE { cx = width, cy = height };
-                    var blend = new BLENDFUNCTION
-                    {
-                        BlendOp = AcSrcOver,
-                        BlendFlags = 0,
-                        SourceConstantAlpha = 255,
-                        AlphaFormat = AcSrcAlpha
-                    };
-
-                    UpdateLayeredWindow(
-                        hwnd,
-                        screenDc,
-                        ref ptDest,
-                        ref size,
-                        memDc,
-                        ref ptSrc,
-                        0,
-                        ref blend,
-                        UlwAlpha);
-
-                    ShowWindow(hwnd, SwShowNoActivate);
-                    SetWindowPos(
-                        hwnd,
-                        -1 /* HWND_TOPMOST */,
-                        posX, posY, width, height,
-                        SwpNoActivate | SwpShowWindow);
-
-                    SelectObject(memDc, hOldBmp);
-                }
-                finally
-                {
-                    DeleteObject(hBitmap);
-                }
+                var pixels = new Span<uint>((void*)surfaceBits, layoutWidth * layoutHeight);
+                RenderToBuffer(pixels, layoutWidth, layoutHeight, dpiScale, displayModel, animator.Frame, animator.Bars, surfaceDc);
             }
-            finally
+
+            var ptSrc = new POINT { X = 0, Y = 0 };
+            var ptDest = new POINT { X = layoutX, Y = layoutY };
+            var size = new SIZE { cx = layoutWidth, cy = layoutHeight };
+            var blend = new BLENDFUNCTION
             {
-                DeleteDC(memDc);
+                BlendOp = AcSrcOver,
+                BlendFlags = 0,
+                SourceConstantAlpha = (byte)Math.Round(Math.Clamp(animator.Frame.Opacity, 0f, 1f) * 255f),
+                AlphaFormat = AcSrcAlpha
+            };
+
+            UpdateLayeredWindow(hwnd, screenDc, ref ptDest, ref size, surfaceDc, ref ptSrc, 0, ref blend, UlwAlpha);
+
+            if (!windowShown || placementDirty)
+            {
+                ShowWindow(hwnd, SwShowNoActivate);
+                SetWindowPos(hwnd, -1 /* HWND_TOPMOST */, layoutX, layoutY, layoutWidth, layoutHeight, SwpNoActivate | SwpShowWindow);
+                windowShown = true;
+                placementDirty = false;
             }
         }
         finally
@@ -290,30 +357,121 @@ public sealed class OverlayWindowManager : IOverlayView
         }
     }
 
-    public static void RenderToBuffer(Span<uint> pixels, int width, int height, float scale, OverlayViewModel model, nint memDc = 0)
+    // Cached back buffer: recreated only when the pill size changes (mode/DPI), never per frame.
+    private bool EnsureSurface(nint screenDc, int width, int height)
     {
-        // 1. Render rounded pill background
-        RenderPillBackground(pixels, width, height, scale);
+        if (surfaceDc != 0 && surfaceWidth == width && surfaceHeight == height) return true;
 
-        // 2. Render status indicator dot
-        RenderStatusDot(pixels, width, height, scale, model.Mode);
+        ReleaseSurface();
 
-        // 3. Render waveform bars
-        if (model.Mode == OverlayMode.Listening && model.Bars.Length > 0)
+        var memDc = CreateCompatibleDC(screenDc);
+        if (memDc == 0) return false;
+
+        var bmi = new BITMAPINFO();
+        bmi.bmiHeader.biSize = (uint)Marshal.SizeOf<BITMAPINFOHEADER>();
+        bmi.bmiHeader.biWidth = width;
+        bmi.bmiHeader.biHeight = -height; // Top-down
+        bmi.bmiHeader.biPlanes = 1;
+        bmi.bmiHeader.biBitCount = 32;
+        bmi.bmiHeader.biCompression = 0; // BI_RGB
+
+        var hBitmap = CreateDIBSection(screenDc, ref bmi, 0, out var pBits, 0, 0);
+        if (hBitmap == 0 || pBits == 0)
         {
-            RenderWaveformBars(pixels, width, height, scale, model.Bars);
+            DeleteDC(memDc);
+            return false;
         }
 
-        // 4. Render text with GDI (if memDc provided)
+        surfaceOldBitmap = SelectObject(memDc, hBitmap);
+        surfaceDc = memDc;
+        surfaceBitmap = hBitmap;
+        surfaceBits = pBits;
+        surfaceWidth = width;
+        surfaceHeight = height;
+        return true;
+    }
+
+    private void ReleaseSurface()
+    {
+        if (surfaceDc == 0) return;
+        SelectObject(surfaceDc, surfaceOldBitmap);
+        DeleteObject(surfaceBitmap);
+        DeleteDC(surfaceDc);
+        surfaceDc = 0;
+        surfaceBitmap = 0;
+        surfaceBits = 0;
+        surfaceOldBitmap = 0;
+        surfaceWidth = 0;
+        surfaceHeight = 0;
+    }
+
+    private void ReleaseResources()
+    {
+        ReleaseSurface();
+        if (cachedFont != 0)
+        {
+            DeleteObject(cachedFont);
+            cachedFont = 0;
+            cachedFontHeight = 0;
+        }
+    }
+
+    // ---- Software rendering (pure pixel work, unit-testable without a window) ----
+
+    public static void RenderToBuffer(Span<uint> pixels, int width, int height, float scale, OverlayViewModel model, nint memDc = 0)
+        => RenderToBuffer(pixels, width, height, scale, model, OverlayFrame.Static(model.Mode), model.Bars, memDc);
+
+    public static void RenderToBuffer(
+        Span<uint> pixels, int width, int height, float scale,
+        OverlayViewModel model, in OverlayFrame frame, ReadOnlySpan<float> bars, nint memDc = 0)
+    {
+        RenderPillBackground(pixels, width, height, scale, frame);
+        RenderStatusDot(pixels, width, height, scale, frame);
+
+        if (frame.Mode is OverlayMode.Listening or OverlayMode.Transcribing && bars.Length > 0)
+        {
+            RenderWaveformBars(pixels, width, height, scale, frame, bars);
+        }
+
         if (memDc != 0)
         {
             RenderText(memDc, pixels, width, height, scale, model);
         }
     }
 
-    private static void RenderPillBackground(Span<uint> pixels, int width, int height, float scale)
+    private static uint Accent(OverlayMode mode) => mode switch
     {
-        float radius = height / 2.0f;
+        OverlayMode.Listening => Rgb(239, 68, 68),     // Red #EF4444
+        OverlayMode.Transcribing => Rgb(56, 189, 248), // Cyan #38BDF8
+        OverlayMode.Notice => Rgb(245, 158, 11),       // Amber #F59E0B
+        _ => Rgb(200, 200, 200)
+    };
+
+    private static uint Rgb(uint r, uint g, uint b) => 0xFF000000 | (r << 16) | (g << 8) | b;
+
+    /// <summary>Per-channel (premultiplied-safe) linear blend of two ARGB pixels.</summary>
+    private static uint Lerp(uint from, uint to, float t)
+    {
+        if (t <= 0f) return from;
+        if (t >= 1f) return to;
+        var inv = 1f - t;
+        var a = (uint)((from >> 24) * inv + (to >> 24) * t + 0.5f);
+        var r = (uint)(((from >> 16) & 0xFF) * inv + ((to >> 16) & 0xFF) * t + 0.5f);
+        var g = (uint)(((from >> 8) & 0xFF) * inv + ((to >> 8) & 0xFF) * t + 0.5f);
+        var b = (uint)((from & 0xFF) * inv + (to & 0xFF) * t + 0.5f);
+        return (a << 24) | (r << 16) | (g << 8) | b;
+    }
+
+    private static uint Fade(uint pixel, float coverage) => Lerp(0, pixel, coverage);
+
+    private static void RenderPillBackground(Span<uint> pixels, int width, int height, float scale, in OverlayFrame frame)
+    {
+        float s = frame.Scale;
+        float pillW = width * s;
+        float pillH = height * s;
+        float offX = (width - pillW) / 2f;
+        float offY = (height - pillH) / 2f;
+        float radius = pillH / 2.0f;
         float borderThickness = 1.2f * scale;
 
         byte bgA = 0xE6;
@@ -322,63 +480,82 @@ public sealed class OverlayWindowManager : IOverlayView
                      | ((uint)(24 * bgA / 255) << 8)
                      | (uint)(27 * bgA / 255);
 
-        uint borderPixel = 0xFF000000 | (70u << 16) | (63u << 8) | 63u;
+        // Border takes a soft tint of the state color that breathes with the pulse and brightens with speech.
+        uint baseBorder = Rgb(70, 63, 63);
+        float glow = frame.Mode is OverlayMode.Listening or OverlayMode.Transcribing
+            ? Math.Min(0.6f, 0.4f * frame.Pulse + 0.4f * frame.Energy)
+            : 0f;
+        uint borderPixel = Lerp(baseBorder, Accent(frame.Mode), glow);
 
         for (int y = 0; y < height; y++)
         {
+            float py = y + 0.5f - offY;
             for (int x = 0; x < width; x++)
             {
-                float dx = x < radius ? radius - x : (x > width - radius ? x - (width - radius) : 0);
-                float dy = Math.Abs(y - radius);
-                float dist = (float)Math.Sqrt(dx * dx + dy * dy);
-
-                if (dist <= radius - borderThickness)
-                {
-                    pixels[y * width + x] = bgPixel;
-                }
-                else if (dist <= radius)
-                {
-                    pixels[y * width + x] = borderPixel;
-                }
-                else
+                float px = x + 0.5f - offX;
+                if (px < 0f || px > pillW || py < 0f || py > pillH)
                 {
                     pixels[y * width + x] = 0;
+                    continue;
                 }
+
+                float dx = px < radius ? radius - px : (px > pillW - radius ? px - (pillW - radius) : 0f);
+                float dy = Math.Abs(py - radius);
+                float dist = MathF.Sqrt(dx * dx + dy * dy);
+
+                float coverage = Math.Clamp(radius - dist + 0.5f, 0f, 1f);
+                if (coverage <= 0f)
+                {
+                    pixels[y * width + x] = 0;
+                    continue;
+                }
+
+                float inner = Math.Clamp(radius - borderThickness - dist + 0.5f, 0f, 1f);
+                pixels[y * width + x] = Fade(Lerp(borderPixel, bgPixel, inner), coverage);
             }
         }
     }
 
-    private static void RenderStatusDot(Span<uint> pixels, int width, int height, float scale, OverlayMode mode)
+    private static void RenderStatusDot(Span<uint> pixels, int width, int height, float scale, in OverlayFrame frame)
     {
-        float cx = 20 * scale;
+        float s = frame.Scale;
+        float cx = width / 2f + (20 * scale - width / 2f) * s;
         float cy = height / 2.0f;
-        float radius = 5.0f * scale;
+        float radius = 5.0f * scale * s;
+        uint color = Accent(frame.Mode);
 
-        uint dotColor = mode switch
-        {
-            OverlayMode.Listening => 0xFF000000 | (239u << 16) | (68u << 8) | 68u,     // Red #EF4444
-            OverlayMode.Transcribing => 0xFF000000 | (56u << 16) | (189u << 8) | 248u, // Cyan #38BDF8
-            OverlayMode.Notice => 0xFF000000 | (245u << 16) | (158u << 8) | 11u,       // Amber #F59E0B
-            _ => 0xFF000000 | (200u << 16) | (200u << 8) | 200u
-        };
+        // Soft halo: pulses while idle, swells with the voice.
+        float haloAlpha = frame.Mode is OverlayMode.Listening or OverlayMode.Transcribing
+            ? 0.22f * frame.Pulse + 0.30f * frame.Energy
+            : 0f;
+        float haloRadius = radius + 5f * scale * s * (0.6f + 0.4f * frame.Pulse);
+        float reach = haloAlpha > 0.001f ? haloRadius : radius;
 
-        for (int y = (int)(cy - radius - 1); y <= (int)(cy + radius + 1); y++)
+        for (int y = (int)(cy - reach - 1); y <= (int)(cy + reach + 1); y++)
         {
             if (y < 0 || y >= height) continue;
-            for (int x = (int)(cx - radius - 1); x <= (int)(cx + radius + 1); x++)
+            for (int x = (int)(cx - reach - 1); x <= (int)(cx + reach + 1); x++)
             {
                 if (x < 0 || x >= width) continue;
-                float d = (float)Math.Sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
-                if (d <= radius)
+                float d = MathF.Sqrt((x + 0.5f - cx) * (x + 0.5f - cx) + (y + 0.5f - cy) * (y + 0.5f - cy));
+                ref uint px = ref pixels[y * width + x];
+
+                if (haloAlpha > 0.001f && d > radius - 0.5f && d < haloRadius)
                 {
-                    pixels[y * width + x] = dotColor;
+                    float falloff = 1f - (d - radius) / (haloRadius - radius);
+                    falloff = Math.Clamp(falloff, 0f, 1f);
+                    px = Lerp(px, color, haloAlpha * falloff * falloff);
                 }
+
+                float dotCoverage = Math.Clamp(radius - d + 0.5f, 0f, 1f);
+                if (dotCoverage > 0f) px = Lerp(px, color, dotCoverage);
             }
         }
     }
 
-    private static void RenderWaveformBars(Span<uint> pixels, int width, int height, float scale, float[] bars)
+    private static void RenderWaveformBars(Span<uint> pixels, int width, int height, float scale, in OverlayFrame frame, ReadOnlySpan<float> bars)
     {
+        float s = frame.Scale;
         int barCount = bars.Length;
         float barWidth = Math.Max(2f, 3.0f * scale);
         float barGap = 3.0f * scale;
@@ -388,28 +565,42 @@ public sealed class OverlayWindowManager : IOverlayView
         float centerY = height / 2.0f;
         float maxBarHeight = height * 0.55f;
 
-        uint barColor = 0xFF000000 | (56u << 16) | (189u << 8) | 248u; // Cyan
+        uint bright = Rgb(56, 189, 248); // Cyan
+        uint dim = Rgb(28, 94, 124);     // Same hue, quieter, for the transcribing shimmer
+        bool shimmer = frame.Mode == OverlayMode.Transcribing;
 
         for (int i = 0; i < barCount; i++)
         {
             float energy = Math.Clamp(bars[i], 0.15f, 1.0f);
-            float h = Math.Max(4f * scale, maxBarHeight * energy);
-            float x0 = startX + i * (barWidth + barGap);
-            float y0 = centerY - (h / 2.0f);
+            float h = Math.Max(4f * scale, maxBarHeight * energy) * s;
+            float w = barWidth * s;
+            float cx = width / 2f + (startX + i * (barWidth + barGap) + barWidth / 2f - width / 2f) * s;
 
-            int ix0 = (int)Math.Round(x0);
-            int ix1 = (int)Math.Round(x0 + barWidth);
-            int iy0 = (int)Math.Round(y0);
-            int iy1 = (int)Math.Round(y0 + h);
+            uint color = shimmer ? Lerp(dim, bright, Math.Clamp((energy - 0.2f) / 0.65f, 0f, 1f)) : bright;
+            DrawCapsule(pixels, width, height, cx, centerY, w / 2f, h / 2f, color);
+        }
+    }
 
-            for (int y = iy0; y < iy1; y++)
+    // Vertical anti-aliased capsule (rounded bar); halfW is also the cap radius.
+    private static void DrawCapsule(Span<uint> pixels, int width, int height, float cx, float cy, float halfW, float halfH, uint color)
+    {
+        float straight = Math.Max(0f, halfH - halfW);
+        int x0 = Math.Max(0, (int)MathF.Floor(cx - halfW - 1));
+        int x1 = Math.Min(width - 1, (int)MathF.Ceiling(cx + halfW + 1));
+        int y0 = Math.Max(0, (int)MathF.Floor(cy - halfH - 1));
+        int y1 = Math.Min(height - 1, (int)MathF.Ceiling(cy + halfH + 1));
+
+        for (int y = y0; y <= y1; y++)
+        {
+            float qy = Math.Max(Math.Abs(y + 0.5f - cy) - straight, 0f);
+            for (int x = x0; x <= x1; x++)
             {
-                if (y < 0 || y >= height) continue;
-                for (int x = ix0; x < ix1; x++)
-                {
-                    if (x < 0 || x >= width) continue;
-                    pixels[y * width + x] = barColor;
-                }
+                float qx = Math.Abs(x + 0.5f - cx);
+                float d = MathF.Sqrt(qx * qx + qy * qy) - halfW;
+                float coverage = Math.Clamp(0.5f - d, 0f, 1f);
+                if (coverage <= 0f) continue;
+                ref uint px = ref pixels[y * width + x];
+                px = Lerp(px, color, coverage);
             }
         }
     }
@@ -423,16 +614,21 @@ public sealed class OverlayWindowManager : IOverlayView
         int textEndX = model.Mode == OverlayMode.Listening ? (int)(width - 55 * scale) : (int)(width - 20 * scale);
 
         var fontHeight = (int)Math.Round(15 * scale);
-        var hFont = CreateFontW(
-            -fontHeight,
-            0, 0, 0,
-            600 /* FW_SEMIBOLD */,
-            0, 0, 0,
-            1 /* DEFAULT_CHARSET */,
-            0, 0, 0, 0,
-            "Segoe UI");
+        if (cachedFont == 0 || cachedFontHeight != fontHeight)
+        {
+            if (cachedFont != 0) DeleteObject(cachedFont);
+            cachedFont = CreateFontW(
+                -fontHeight,
+                0, 0, 0,
+                600 /* FW_SEMIBOLD */,
+                0, 0, 0,
+                1 /* DEFAULT_CHARSET */,
+                0, 0, 0, 0,
+                "Segoe UI");
+            cachedFontHeight = fontHeight;
+        }
 
-        var oldFont = SelectObject(memDc, hFont);
+        var oldFont = SelectObject(memDc, cachedFont);
         SetBkMode(memDc, 1 /* TRANSPARENT */);
         SetTextColor(memDc, 0x00FFFFFF); // White text
 
@@ -452,7 +648,6 @@ public sealed class OverlayWindowManager : IOverlayView
             DtSingleLine | DtVCenter | DtLeft | DtEndEllipsis);
 
         SelectObject(memDc, oldFont);
-        DeleteObject(hFont);
 
         // Alpha channel fixup for text rendered by GDI
         for (int y = 0; y < height; y++)
@@ -591,6 +786,10 @@ public sealed class OverlayWindowManager : IOverlayView
     [DllImport("user32.dll")] private static extern bool TranslateMessage(in Message message);
     [DllImport("user32.dll")] private static extern nint DispatchMessage(in Message message);
     [DllImport("user32.dll", EntryPoint = "PostThreadMessageW")] private static extern bool PostThreadMessageW(uint idThread, uint msg, nint wParam, nint lParam);
+    [DllImport("user32.dll", EntryPoint = "PeekMessageW")] private static extern bool PeekMessage(out Message message, nint window, uint filterMin, uint filterMax, uint removeMsg);
+    [DllImport("user32.dll")] private static extern uint MsgWaitForMultipleObjects(uint count, nint handles, bool waitAll, uint milliseconds, uint wakeMask);
+    [DllImport("winmm.dll")] private static extern uint timeBeginPeriod(uint period);
+    [DllImport("winmm.dll")] private static extern uint timeEndPeriod(uint period);
     [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] private static extern nint GetModuleHandle(string? moduleName);
 

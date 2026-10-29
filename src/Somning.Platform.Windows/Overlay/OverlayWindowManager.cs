@@ -33,7 +33,8 @@ public sealed class OverlayWindowManager : IOverlayView
     private const uint WmQuit = 0x0012;
     private const uint QsAllInput = 0x04FF;
     private const uint Infinite = 0xFFFFFFFF;
-    private const long FrameIntervalMs = 16; // ~60 fps
+    private const long FrameIntervalMs = 16;      // ~60 fps while anything moves quickly
+    private const long CalmFrameIntervalMs = 33;  // ~30 fps when calm (OverlayAnimator.IsCalm)
 
     private readonly Thread staThread;
     private readonly TaskCompletionSource<nint> ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -42,11 +43,18 @@ public sealed class OverlayWindowManager : IOverlayView
     private uint threadId;
     private bool disposed;
     private OverlayViewModel currentModel = OverlayViewModel.CreateHidden();
-    private readonly WindowProcedure wndProcDelegate;
+    // Static on purpose: the window class is registered once per process and keeps this function pointer, so the
+    // delegate must outlive every OverlayWindowManager instance (a per-instance delegate was collected after the first
+    // manager died and crashed the next window creation).
+    private static readonly WindowProcedure WndProcDelegate = WndProc;
 
     // Render-thread-only animation state (touched exclusively from the overlay STA thread).
     private readonly OverlayAnimator animator = new();
     private readonly DropRenderer renderer = new();
+    private readonly IBackdropSource? backdropSource;
+    private readonly BackdropCache backdrop;
+    private BackdropRegion monitorBounds;
+    private float lastDt;
     private float pendingLevel = -1f;   // written by the audio thread, read by the render thread; -1 = none
     private long lastTick;
     private bool windowShown;
@@ -59,9 +67,16 @@ public sealed class OverlayWindowManager : IOverlayView
     private nint surfaceDc, surfaceBitmap, surfaceOldBitmap, surfaceBits;
     private int surfaceWidth, surfaceHeight;
 
-    public OverlayWindowManager()
+    /// <summary>Environment variable that disables the desktop reflection when set to 0 (privacy/CPU escape hatch).</summary>
+    public const string BackdropEnvironmentVariable = "SOMNING_OVERLAY_BACKDROP";
+
+    /// <param name="backdropSource">Source of the blurred desktop behind the drop; null uses the real screen unless disabled by the environment variable.</param>
+    /// <param name="useScreenBackdrop">False disables the reflection entirely when no explicit source is given.</param>
+    public OverlayWindowManager(IBackdropSource? backdropSource = null, bool useScreenBackdrop = true)
     {
-        wndProcDelegate = WndProc;
+        var disabled = Environment.GetEnvironmentVariable(BackdropEnvironmentVariable) == "0";
+        this.backdropSource = backdropSource ?? (useScreenBackdrop && !disabled ? new ScreenBackdropSource() : null);
+        backdrop = new BackdropCache(this.backdropSource);
         staThread = new Thread(RunMessagePump)
         {
             IsBackground = true,
@@ -117,7 +132,7 @@ public sealed class OverlayWindowManager : IOverlayView
         {
             Size = (uint)Marshal.SizeOf<WindowClass>(),
             Style = 0x0001 | 0x0002, // CS_VREDRAW | CS_HREDRAW
-            Procedure = Marshal.GetFunctionPointerForDelegate(wndProcDelegate),
+            Procedure = Marshal.GetFunctionPointerForDelegate(WndProcDelegate),
             Instance = instance,
             ClassName = WindowClassName
         };
@@ -139,6 +154,7 @@ public sealed class OverlayWindowManager : IOverlayView
             return;
         }
 
+        _ = ScreenBackdropSource.ExcludeFromCapture(createdHwnd);   // best effort: the drop must never appear in its own reflection
         ready.TrySetResult(createdHwnd);
 
         RunAnimationLoop();
@@ -201,16 +217,16 @@ public sealed class OverlayWindowManager : IOverlayView
                 if (windowShown) HideWindow();
             }
 
-            MsgWaitForMultipleObjects(0, 0, false, animator.IsActive ? FrameWaitMs(frameStart) : Infinite, QsAllInput);
+            MsgWaitForMultipleObjects(0, 0, false, animator.IsActive ? FrameWaitMs(frameStart, animator.IsCalm ? CalmFrameIntervalMs : FrameIntervalMs) : Infinite, QsAllInput);
         }
 
         if (timerRaised) timeEndPeriod(1);
     }
 
-    private static uint FrameWaitMs(long frameStart)
+    private static uint FrameWaitMs(long frameStart, long intervalMs)
     {
         var elapsedMs = (Stopwatch.GetTimestamp() - frameStart) * 1000 / Stopwatch.Frequency;
-        return (uint)Math.Clamp(FrameIntervalMs - elapsedMs, 1, FrameIntervalMs);
+        return (uint)Math.Clamp(intervalMs - elapsedMs, 1, intervalMs);
     }
 
     private void DrainActions()
@@ -222,7 +238,7 @@ public sealed class OverlayWindowManager : IOverlayView
         }
     }
 
-    private nint WndProc(nint window, uint message, nint wParam, nint lParam)
+    private static nint WndProc(nint window, uint message, nint wParam, nint lParam)
     {
         const uint WmNcHitTest = 0x0084;
         const uint WmMouseActivate = 0x0021;
@@ -264,7 +280,7 @@ public sealed class OverlayWindowManager : IOverlayView
         }
         else if (model.Mode == OverlayMode.Transcribing)
         {
-            captionMask = TextMask.Create(model.Text ?? string.Empty, (int)Math.Round(13 * dpiScale));
+            captionMask = DropLayout.CreateCaption(model.Text, dpiScale);
         }
 
         animator.Show(model.Mode);
@@ -277,6 +293,7 @@ public sealed class OverlayWindowManager : IOverlayView
 
         var mi = new MONITORINFO { cbSize = (uint)Marshal.SizeOf<MONITORINFO>() };
         GetMonitorInfo(monitor, ref mi);
+        monitorBounds = new BackdropRegion(mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left, mi.rcMonitor.bottom - mi.rcMonitor.top);
 
         uint dpi = GetDpiForWindow(hwnd);
         if (dpi == 0) dpi = 96;
@@ -291,6 +308,7 @@ public sealed class OverlayWindowManager : IOverlayView
     {
         var dt = (float)((now - lastTick) / (double)Stopwatch.Frequency);
         lastTick = now;
+        lastDt = Math.Clamp(dt, 0f, OverlayAnimator.MaxDeltaSeconds);
 
         var level = Volatile.Read(ref pendingLevel);
         if (level >= 0f && animator.Frame.Mode == OverlayMode.Listening) animator.SetLevel(level);
@@ -303,6 +321,7 @@ public sealed class OverlayWindowManager : IOverlayView
     {
         ShowWindow(hwnd, SwHide);
         windowShown = false;
+        backdrop.Reset();   // forget the reduced desktop picture as soon as the overlay is gone
     }
 
     private void DrawFrame()
@@ -316,6 +335,9 @@ public sealed class OverlayWindowManager : IOverlayView
         layoutX = anchorCenterX - width / 2;
         layoutY = anchorBottom - height;
 
+        backdrop.Configure(layoutX, layoutY, layoutWidth, layoutHeight, dpiScale, monitorBounds);
+        backdrop.Advance(lastDt);
+
         var screenDc = GetDC(0);
         if (screenDc == 0) return;
 
@@ -326,7 +348,7 @@ public sealed class OverlayWindowManager : IOverlayView
             unsafe
             {
                 var pixels = new Span<uint>((void*)surfaceBits, layoutWidth * layoutHeight);
-                renderer.Render(pixels, layoutWidth, layoutHeight, dpiScale, in frame, textMask, noticeHalfWidth, captionMask);
+                renderer.Render(pixels, layoutWidth, layoutHeight, dpiScale, in frame, textMask, noticeHalfWidth, captionMask, backdrop.Texture, backdrop.Availability);
             }
 
             var ptSrc = new POINT { X = 0, Y = 0 };
@@ -403,7 +425,12 @@ public sealed class OverlayWindowManager : IOverlayView
         surfaceHeight = 0;
     }
 
-    private void ReleaseResources() => ReleaseSurface();
+    private void ReleaseResources()
+    {
+        ReleaseSurface();
+        backdrop.Reset();
+        backdropSource?.Dispose();
+    }
 
     /// <summary>Renders a settled frame for the model into a premultiplied ARGB buffer (headless, no window).</summary>
     public static void RenderToBuffer(Span<uint> pixels, int width, int height, float scale, OverlayViewModel model)
@@ -413,7 +440,7 @@ public sealed class OverlayWindowManager : IOverlayView
             ? TextMask.Create(model.Text ?? string.Empty, (int)Math.Round(15 * scale))
             : TextMask.Empty;
         var caption = model.Mode == OverlayMode.Transcribing
-            ? TextMask.Create(model.Text ?? string.Empty, (int)Math.Round(13 * scale))
+            ? DropLayout.CreateCaption(model.Text, scale)
             : TextMask.Empty;
         new DropRenderer().Render(pixels, width, height, scale, in frame, mask, DropLayout.NoticeHalfWidth(mask.Width, scale), caption);
     }

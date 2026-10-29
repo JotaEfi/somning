@@ -5,18 +5,19 @@ namespace Somning.Platform.Windows.Overlay;
 
 /// <summary>
 /// Software renderer for the translucent 3D glass drop. Every pixel is shaded analytically from a signed-distance
-/// style shape (circle with radial lobes, morphing into a capsule): sphere normal, fresnel rim, key/secondary
-/// specular, lens-refracted liquid made of flowing color blobs, outer glow and contact shadow. Output is
-/// premultiplied ARGB, anti-aliased by distance coverage (no supersampling). Instances own scratch buffers, so
-/// rendering allocates nothing; use one instance per render thread.
+/// style shape (a capsule that the voice elongates, with a teardrop lean and faint radial lobes): sphere normal,
+/// fresnel rim with chromatic dispersion, double rim light, inner occlusion, subsurface glow, key/secondary
+/// specular, bubbles, lens-refracted liquid made of flowing color blobs, optional refraction/reflection of the
+/// blurred desktop behind it, outer glow and a backdrop-tinted contact shadow. Output is premultiplied ARGB,
+/// anti-aliased by distance coverage. Instances own scratch buffers, so rendering allocates nothing; use one
+/// instance per render thread.
 /// </summary>
 public sealed class DropRenderer
 {
     private const int Blobs = DropPalette.BlobCount;
     private const float GlowRangeDip = 24f;
     private const float DefaultNativeDpiLimit = 1.25f;
-    private const float CaptionGapDip = 17f;
-    private const float CaptionPlateAlpha = 0.58f;
+    private const int BubbleCount = 3;
 
     // Blob motion (amplitude xy, frequency xy, phase xy) and size (xy) in sphere-space units.
     private static readonly float[] BlobMotion =
@@ -38,7 +39,9 @@ public sealed class DropRenderer
     ];
 
     private readonly float[] colors = new float[DropPalette.Length];
+    private readonly float[] bubbles = new float[BubbleCount * 3];
     private Blob blob0, blob1, blob2, blob3, blob4;
+
     /// <summary>Highest DPI scale shaded at native resolution; above it the glass is shaded at 100% and upscaled.</summary>
     public float NativeDpiLimit { get; init; } = DefaultNativeDpiLimit;
 
@@ -49,16 +52,19 @@ public sealed class DropRenderer
     /// <summary>
     /// Renders one frame into a premultiplied ARGB buffer (cleared first). Above ~125% DPI the glass is shaded at
     /// 100% resolution and bilinearly upscaled (the shading is smooth), which keeps CPU use flat; text is always
-    /// drawn at full resolution.
+    /// drawn at full resolution. <paramref name="backdrop"/> (window-pixel mapped) enables refraction/reflection of
+    /// the desktop behind the drop with weight <paramref name="backdropMix"/>.
     /// </summary>
-    public void Render(Span<uint> pixels, int width, int height, float dpiScale, in DropFrame frame, TextMask? text = null, float noticeHalfWidth = 0f, TextMask? caption = null)
+    public void Render(Span<uint> pixels, int width, int height, float dpiScale, in DropFrame frame, TextMask? text = null,
+        float noticeHalfWidth = 0f, TextMask? caption = null, BackdropTexture? backdrop = null, float backdropMix = 0f)
     {
         pixels.Clear();
         if (frame.Mode == OverlayMode.Hidden || frame.Opacity <= 0.002f || frame.Scale <= 0.02f) return;
 
+        var mix = backdrop is null ? 0f : Math.Clamp(backdropMix, 0f, 1f);
         if (dpiScale <= NativeDpiLimit)
         {
-            RenderGlass(pixels, width, height, dpiScale, in frame, noticeHalfWidth);
+            RenderGlass(pixels, width, height, dpiScale, in frame, noticeHalfWidth, backdrop, mix, 1f);
         }
         else
         {
@@ -68,48 +74,69 @@ public sealed class DropRenderer
             if (internalBuffer.Length < iw * ih) internalBuffer = new uint[iw * ih];
             var inner = internalBuffer.AsSpan(0, iw * ih);
             inner.Clear();
-            RenderGlass(inner, iw, ih, 1f, in frame, noticeHalfWidth * k);
+            RenderGlass(inner, iw, ih, 1f, in frame, noticeHalfWidth * k, backdrop, mix, k);
             Upscale(inner, iw, ih, pixels, width, height);
         }
 
         if (text is { Width: > 0 } && frame.Morph > 0.5f)
         {
-            var textAlpha = Smooth((frame.Morph - 0.55f) / 0.4f) * frame.Opacity;
-            DrawText(pixels, width, height, text, textAlpha, width / 2f, height / 2f);
+            var textAlpha = FastMath.Smooth((frame.Morph - 0.55f) / 0.4f) * frame.Opacity;
+            CaptionPainter.DrawText(pixels, width, height, text, textAlpha, width / 2f, height / 2f);
         }
 
         if (caption is { Width: > 0 } && frame.Mode == OverlayMode.Transcribing)
         {
-            var captionAlpha = Smooth((frame.TranscribeMix - 0.1f) / 0.8f) * frame.Opacity;
+            var captionAlpha = FastMath.Smooth((frame.TranscribeMix - 0.1f) / 0.8f) * frame.Opacity;
             if (captionAlpha > 0.01f)
             {
-                var centerY = height / 2f + (DropLayout.OrbRadius * frame.Radius * frame.Scale + CaptionGapDip) * dpiScale;
-                DrawCaptionPlate(pixels, width, height, caption, captionAlpha, dpiScale, centerY);
-                DrawText(pixels, width, height, caption, captionAlpha, width / 2f, centerY);
+                var centerY = height / 2f + (DropLayout.OrbRadius + CaptionPainter.GapDip + CaptionPainter.HeightDip / 2f) * dpiScale;
+                CaptionPainter.Draw(pixels, width, height, dpiScale, caption, captionAlpha, frame.Time, width / 2f, centerY, backdrop, mix);
             }
         }
     }
 
-    private void RenderGlass(Span<uint> pixels, int width, int height, float dpiScale, in DropFrame frame, float noticeHalfWidth)
+    private void RenderGlass(Span<uint> pixels, int width, int height, float dpiScale, in DropFrame frame, float noticeHalfWidth,
+        BackdropTexture? backdrop, float backdropMix, float pixelScale)
     {
-        var scene = new Scene(frame, width, height, dpiScale, noticeHalfWidth);
+        var scene = new Scene(frame, width, height, dpiScale, noticeHalfWidth, backdrop, backdropMix, pixelScale);
         DropPalette.Blend(colors, frame.TranscribeMix, frame.NoticeMix);
         PrepareBlobs(frame);
+        PrepareBubbles(in scene, frame);
 
-        var reach = scene.HalfWidth * 1.3f + GlowRangeDip * dpiScale;
-        var reachY = scene.HalfHeight * 1.3f + GlowRangeDip * dpiScale;
+        var reach = scene.HalfWidth * 1.3f + scene.GlowRange;
+        var reachY = scene.HalfHeight * 1.6f + scene.GlowRange;
         var x0 = Math.Max(0, (int)(scene.CenterX - reach));
         var x1 = Math.Min(width - 1, (int)(scene.CenterX + reach));
         var y0 = Math.Max(0, (int)(scene.CenterY - reachY));
         var y1 = Math.Min(height - 1, (int)(scene.CenterY + reachY));
 
-        for (var y = y0; y <= y1; y++)
+        // Glow and shadow are smooth, so pixels well outside the glass are shaded once per 2x2 block.
+        for (var y = y0; y <= y1; y += 2)
         {
-            for (var x = x0; x <= x1; x++)
+            for (var x = x0; x <= x1; x += 2)
             {
-                var px = ShadePixel(in scene, x + 0.5f - scene.CenterX, y + 0.5f - scene.CenterY);
-                if (px.A <= 0.0005f) continue;
-                pixels[y * width + x] = Pack(px, frame.Opacity);
+                var fullBlock = x + 1 < width && y + 1 < height;
+                if (fullBlock && TryOutside(in scene, x + 1f - scene.CenterX, y + 1f - scene.CenterY, out var outside))
+                {
+                    if (outside.A <= 0.0005f) continue;
+                    var packed = Px.Pack(outside, frame.Opacity);
+                    var i0 = y * width + x;
+                    pixels[i0] = packed;
+                    pixels[i0 + 1] = packed;
+                    pixels[i0 + width] = packed;
+                    pixels[i0 + width + 1] = packed;
+                    continue;
+                }
+
+                for (var dy = 0; dy < 2 && y + dy < height; dy++)
+                {
+                    for (var dx = 0; dx < 2 && x + dx < width; dx++)
+                    {
+                        var px = ShadePixel(in scene, x + dx + 0.5f - scene.CenterX, y + dy + 0.5f - scene.CenterY);
+                        if (px.A <= 0.0005f) continue;
+                        pixels[(y + dy) * width + x + dx] = Px.Pack(px, frame.Opacity);
+                    }
+                }
             }
         }
     }
@@ -184,6 +211,21 @@ public sealed class DropRenderer
             colors[i * 3], colors[i * 3 + 1], colors[i * 3 + 2]);
     }
 
+    // Slow drifting bubbles (center xy and radius in pixels, relative to the drop center): little living details.
+    private void PrepareBubbles(in Scene s, in DropFrame frame)
+    {
+        var t = frame.Time * 0.6f + frame.RipplePhase * 0.05f;
+        var h = s.HalfHeight;
+        var w = Math.Max(s.HalfWidth - h * 0.55f, h * 0.45f);
+        for (var i = 0; i < BubbleCount; i++)
+        {
+            var ph = i * 2.1f;
+            bubbles[i * 3] = w * (0.62f * MathF.Sin(t * (0.37f + 0.11f * i) + ph) - 0.05f);
+            bubbles[i * 3 + 1] = h * (0.34f * MathF.Cos(t * (0.29f + 0.09f * i) + ph * 1.7f) + 0.10f);
+            bubbles[i * 3 + 2] = h * (0.075f + 0.02f * i);
+        }
+    }
+
     private readonly record struct Blob(float X, float Y, float InvSx, float InvSy, float R, float G, float B);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -199,14 +241,61 @@ public sealed class DropRenderer
         bl += w * b.B;
     }
 
-    private Px ShadePixel(in Scene s, float dx, float dy)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void Env(in Scene s, float x, float y, out float r, out float g, out float b) =>
+        s.Tex!.SampleTexel(s.BackdropX0 + x * s.BackdropSx, s.BackdropY0 + y * s.BackdropSy, out r, out g, out b);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static float Fresnel(float u)
     {
+        var a = 1f - FastMath.Sqrt(MathF.Max(0f, 1f - u * u));
+        return a * a * a;
+    }
+
+    // True (with the glow/shadow color) when the point lies at least 2.5 px outside the glass edge.
+    private bool TryOutside(in Scene s, float dx, float dy, out Px result)
+    {
+        result = default;
+        var along = Math.Clamp(dx * s.InvHalfWidth, -1f, 1f);
+        var dyl = dy * MathF.ReciprocalEstimate(1f + s.Lean * along);
         var core = Math.Clamp(dx, -s.CoreHalfLength, s.CoreHalfLength);
         var qx = (dx - core) * s.InvRx;
-        var qy = dy * s.InvRy;
+        var qy = dyl * s.InvRy;
+        var d2 = qx * qx + qy * qy;
+        if (d2 > s.RejectLen2) return true;
+        if (d2 < 0.5f) return false;
+        var len = FastMath.Sqrt(d2);
+        var inv = 1f / len;
+        var zx = qx * inv;
+        var zy = qy * inv;
+        var z2x = zx * zx - zy * zy;
+        var z2y = 2f * zx * zy;
+        var z3x = z2x * zx - z2y * zy;
+        var z3y = z2x * zy + z2y * zx;
+        var z4x = z2x * z2x - z2y * z2y;
+        var z4y = 2f * z2x * z2y;
+        var r = 1f + s.L1x * zx - s.L1y * zy + s.L2x * z2x - s.L2y * z2y
+                   + s.L3x * z3x - s.L3y * z3y + s.L4x * z4x - s.L4y * z4y;
+        var edgePx = (1f - len / r) * r * s.EdgeScale;
+        if (edgePx < -s.GlowRange) return true;
+        if (edgePx > -2.5f) return false;
+        result = Outside(in s, dx, dy, -edgePx);
+        return true;
+    }
+
+    private Px ShadePixel(in Scene s, float dx, float dy)
+    {
+        // Teardrop lean: the fat end is taller than the thin end.
+        var along = Math.Clamp(dx * s.InvHalfWidth, -1f, 1f);
+        var leanInv = MathF.ReciprocalEstimate(1f + s.Lean * along);
+        var dyl = dy * leanInv;
+
+        var core = Math.Clamp(dx, -s.CoreHalfLength, s.CoreHalfLength);
+        var qx = (dx - core) * s.InvRx;
+        var qy = dyl * s.InvRy;
         var d2 = qx * qx + qy * qy;
         if (d2 > s.RejectLen2) return default;
-        var len = MathF.Sqrt(d2);
+        var len = FastMath.Sqrt(d2);
         var inv = len > 1e-4f ? 1f / len : 0f;
         var zx = qx * inv;
         var zy = qy * inv;
@@ -227,38 +316,52 @@ public sealed class DropRenderer
         if (edgePx < -0.5f) return Outside(in s, dx, dy, -edgePx);
 
         var coverage = Math.Min(1f, edgePx + 0.5f);
-        var px = ShadeGlass(in s, dx, dy, qx / r, qy / r, u > 1f ? 1f : u);
+        var px = ShadeGlass(in s, dx, dy, dyl, qx / r, qy / r, u > 1f ? 1f : u);
         // Soft shadow/glow shows through the anti-aliased rim.
         if (coverage < 1f)
         {
             var outside = Outside(in s, dx, dy, Math.Max(0f, -edgePx));
-            px = Over(outside, Scale(px, coverage));
+            px = Px.Over(outside, Px.Scale(px, coverage));
         }
 
         return px;
     }
 
-    private Px ShadeGlass(in Scene s, float dx, float dy, float nx, float ny, float u)
+    private Px ShadeGlass(in Scene s, float dx, float dy, float dyl, float nx, float ny, float u)
     {
         var u2 = u * u;
-        var nz = MathF.Sqrt(MathF.Max(0f, 1f - u2));
+        var nz = FastMath.Sqrt(MathF.Max(0f, 1f - u2));
         var rim1 = 1f - nz;
-        var fresnel = rim1 * rim1 * rim1;
+        var mix = s.BackdropMix;
 
         // Sphere-space coordinates normalized to the drop's bounding box (ribbons stretch along the capsule).
-        var sx = dx * s.InvHalfW;
-        var sy = dy * s.InvHalfH;
+        var sx = dx * s.InvBoxW;
+        var sy = dyl * s.InvBoxH;
 
         // Glass body: dark, mostly transparent in the middle, denser toward the rim, lit from the upper left.
+        // Over a captured backdrop the body gets clearer so the refracted desktop shows through.
         var lit = MathF.Max(0f, -0.45f * nx - 0.60f * ny + 0.66f * nz);
-        var bodyA = 0.20f + 0.40f * rim1 * rim1 + 0.58f * s.NoticeMix;
+        var bodyA = (0.20f + 0.40f * rim1 * rim1) * (1f - 0.35f * mix) + 0.58f * s.NoticeMix;
         var body = new Px(
             (0.018f + 0.050f * lit) * bodyA,
             (0.030f + 0.075f * lit) * bodyA,
             (0.070f + 0.140f * lit) * bodyA,
             bodyA);
 
-        // Liquid seen through a spherical lens: content near the rim is magnified toward it.
+        // Refraction: a lens shows the desktop compressed toward the center and, near the rim, what lies around it.
+        float refR = 0f, refG = 0f, refB = 0f;
+        var px = default(Px);
+        if (mix > 0f)
+        {
+            var reach = s.RefractReach * u2;
+            Env(in s, s.CenterX + dx * 0.80f + nx * reach, s.CenterY + dy * 0.80f + ny * reach, out refR, out refG, out refB);
+            var lensA = mix * (0.40f + 0.45f * u2);
+            px = new Px(refR * lensA, refG * lensA, refB * lensA, lensA);
+        }
+
+        px = Px.Over(body, px);
+
+        // Liquid seen through the lens, with living micro-undulations that ripple harder on phonemes.
         var lens = 1f - 0.30f * u2;
         var lx = sx * lens;
         var ly = sy * lens;
@@ -267,6 +370,8 @@ public sealed class DropRenderer
         var ry = s.RotSin * lx + s.RotCos * ly;
         var tx = rx - twist * ry;
         var ty = ry + twist * rx + s.Curve * (tx * tx - 0.18f);
+        tx += s.Wobble * FastMath.Sin(ty * 7f + s.WobblePhase);
+        ty += s.Wobble * FastMath.Sin(tx * 6f - s.WobblePhase * 0.8f);
 
         float sum = 0f, cr = 0f, cg = 0f, cb = 0f;
         Accumulate(in blob0, tx, ty, ref sum, ref cr, ref cg, ref cb);
@@ -277,42 +382,84 @@ public sealed class DropRenderer
 
         var invSum = MathF.ReciprocalEstimate(sum + 1e-4f);
         var intensity = sum * s.LiquidGain;
-        var depth = 1f - Smooth((u - 0.80f) / 0.2f) * 0.55f;       // liquid sits inside the glass wall
+        var depth = 1f - FastMath.Smooth((u - 0.80f) / 0.2f) * 0.55f;       // liquid sits inside the glass wall
         var strength = intensity / (intensity + 0.5f) * depth;
         var hot = Math.Clamp(intensity - 1.5f, 0f, 1f) * 0.25f;    // overdriven cores bloom toward white
         var liquidR = Math.Min(1f, cr * invSum + hot);
         var liquidG = Math.Min(1f, cg * invSum + hot);
         var liquidB = Math.Min(1f, cb * invSum + hot);
-        var la = Math.Min(0.96f, strength * 1.05f);
-        var px = Over(new Px(liquidR * la, liquidG * la, liquidB * la, la), body);
+        if (mix > 0f)
+        {
+            // The surroundings tint the liquid, but the Siri colors stay readable.
+            var tint = 0.16f * mix;
+            liquidR += (refR * 0.9f - liquidR) * tint;
+            liquidG += (refG * 0.9f - liquidG) * tint;
+            liquidB += (refB * 0.9f - liquidB) * tint;
+        }
 
-        // Inner glow of the liquid lighting the glass around it.
+        var la = Math.Min(0.96f, strength * 1.05f);
+        px = Px.Over(new Px(liquidR * la, liquidG * la, liquidB * la, la), px);
+
+        // Inner occlusion: the glass wall thickens toward the upper left and swallows light there.
+        var toward = MathF.Max(0f, nx * 0.55f + ny * 0.83f);
+        var wall = FastMath.Smooth((u - 0.70f) / 0.22f) * (1f - FastMath.Smooth((u - 0.95f) / 0.045f));
+        var occlusion = wall * 0.30f * (1f - toward) * (1f - 0.5f * s.NoticeMix);
+        px = Px.Over(new Px(0f, 0f, 0.012f * occlusion, occlusion), px);
+
+        // Inner glow of the liquid lighting the glass around it, plus a wider subsurface scatter.
         var bloom = strength * 0.22f * (1f - u2);
-        px = Add(px, liquidR * bloom, liquidG * bloom, liquidB * bloom, bloom * 0.5f);
+        var scatter = intensity / (intensity + 1.6f) * (1f - u2) * (1f - u2) * 0.26f;
+        var glow = bloom + scatter;
+        px = Px.Add(px, liquidR * glow, liquidG * glow, liquidB * glow, glow * 0.5f);
 
         // Secondary light leaving through the lower right: a warm crescent hugging the inside of the rim.
-        var ring = Smooth((u - 0.58f) / 0.30f) * (1f - Smooth((u - 0.90f) / 0.09f));
-        var toward = MathF.Max(0f, nx * 0.55f + ny * 0.83f);
+        var ring = FastMath.Smooth((u - 0.58f) / 0.30f) * (1f - FastMath.Smooth((u - 0.90f) / 0.09f));
         var crescent = ring * toward * toward * 0.62f * (1f - 0.6f * s.NoticeMix);
-        px = Add(px, (0.55f * liquidR + 0.45f) * crescent, (0.55f * liquidG + 0.45f) * crescent, (0.55f * liquidB + 0.45f) * crescent, crescent * 0.8f);
+        px = Px.Add(px, (0.55f * liquidR + 0.45f) * crescent, (0.55f * liquidG + 0.45f) * crescent, (0.55f * liquidB + 0.45f) * crescent, crescent * 0.8f);
 
-        // Fresnel rim with a cool top-left / warm bottom-right tint (thin-film look) and a hard dark outline for contrast.
+        // Fresnel rim with chromatic dispersion (each channel refracts a bit differently) and, over a backdrop,
+        // a reflection of the surroundings; a cool top-left / warm bottom-right thin-film tint underneath.
         var warm = 0.5f + 0.5f * (nx * 0.6f + ny * 0.8f);
-        var rimStrength = fresnel * 0.95f;
-        px = Add(px,
-            (0.70f + 0.30f * warm) * rimStrength,
-            (0.88f - 0.10f * warm) * rimStrength,
-            (1.00f - 0.35f * warm) * rimStrength,
-            rimStrength * 0.9f);
-        var outline = Smooth((u - 0.935f) / 0.065f);
-        px = Over(new Px(0f, 0f, 0.02f * outline * 0.35f, 0.35f * outline), px);
+        var fresR = Fresnel(u * 0.972f);
+        var fresG = Fresnel(u * 0.986f);
+        var fresB = Fresnel(u);
+        var baseR = 0.70f + 0.30f * warm;
+        var baseG = 0.88f - 0.10f * warm;
+        var baseB = 1.00f - 0.35f * warm;
+        if (mix > 0f && u > 0.78f)
+        {
+            // Two samples straddling the rim give the dispersion: red/blue come from slightly different distances.
+            var ui = 1f / MathF.Max(u, 0.05f);
+            var ox = nx * ui;
+            var oy = ny * ui;
+            var d0 = s.EnvReach;
+            Env(in s, s.CenterX + dx * 1.1f + ox * d0 * 0.94f, s.CenterY + dy * 1.1f + oy * d0 * 0.94f, out var aR, out var aG, out _);
+            Env(in s, s.CenterX + dx * 1.1f + ox * d0 * 1.08f, s.CenterY + dy * 1.1f + oy * d0 * 1.08f, out _, out var bG, out var bB);
+            var kEnv = 0.72f * mix;
+            baseR += (aR * 1.25f + 0.10f - baseR) * kEnv;
+            baseG += ((aG + bG) * 0.625f + 0.10f - baseG) * kEnv;
+            baseB += (bB * 1.25f + 0.10f - baseB) * kEnv;
+        }
+
+        px = Px.Add(px, baseR * fresR * 0.95f, baseG * fresG * 0.95f, baseB * fresB * 0.95f, Math.Max(fresR, Math.Max(fresG, fresB)) * 0.9f);
+
+        // Second rim light: a thin warm bounce hugging the lower-right edge, picking up the liquid color.
+        var bounceBand = FastMath.Smooth((u - 0.80f) / 0.10f) * (1f - FastMath.Smooth((u - 0.965f) / 0.03f));
+        var bounce = bounceBand * toward * toward * toward * 0.55f * (1f - 0.7f * s.NoticeMix);
+        px = Px.Add(px, (0.45f * liquidR + 0.55f) * bounce, (0.45f * liquidG + 0.45f) * bounce, (0.45f * liquidB + 0.35f) * bounce, bounce * 0.7f);
+
+        // Hard dark outline for contrast on light backgrounds.
+        var outline = FastMath.Smooth((u - 0.935f) / 0.065f);
+        px = Px.Over(new Px(0f, 0f, 0.02f * outline * 0.35f, 0.35f * outline * (1f - 0.35f * mix)), px);
+
+        px = AddBubbles(in s, px, dx, dyl, liquidR, liquidG, liquidB);
 
         // Key highlight: a soft window-like reflection near the top-left, plus a crisp pin and a faint opposite glint.
         var ex1 = sx + 0.36f * s.HighlightSpread;
         var ey1 = sy + 0.50f;
-        var along = (ex1 * 0.82f - ey1 * 0.58f) / (0.30f * s.HighlightSpread);
+        var along1 = (ex1 * 0.82f - ey1 * 0.58f) / (0.30f * s.HighlightSpread);
         var across = (ex1 * 0.58f + ey1 * 0.82f) / 0.12f;
-        var window = MathF.Max(0f, 1f - (along * along + across * across));
+        var window = MathF.Max(0f, 1f - (along1 * along1 + across * across));
         window = window * window * (3f - 2f * window);
         var gloss = window * 0.82f;
         if (sx < -0.1f && sy < -0.05f)
@@ -330,12 +477,37 @@ public sealed class DropRenderer
         // Thin curved gloss band just inside the top rim.
         if (u > 0.80f && ny < -0.30f)
         {
-            var topBand = Smooth((u - 0.80f) / 0.08f) * (1f - Smooth((u - 0.93f) / 0.05f)) * Math.Clamp((-ny - 0.30f) / 0.5f, 0f, 1f);
+            var topBand = FastMath.Smooth((u - 0.80f) / 0.08f) * (1f - FastMath.Smooth((u - 0.93f) / 0.05f)) * Math.Clamp((-ny - 0.30f) / 0.5f, 0f, 1f);
             gloss += topBand * 0.30f;
         }
 
         gloss = Math.Min(1f, gloss) * s.GlossScale;
-        return Add(px, gloss, gloss, gloss, gloss);
+        return Px.Add(px, gloss, gloss, gloss, gloss);
+    }
+
+    // Little air bubbles: a faint ring with a pin highlight, tinted by the liquid, drifting slowly.
+    private Px AddBubbles(in Scene s, Px px, float dx, float dyl, float lr, float lg, float lb)
+    {
+        if (s.BubbleGain <= 0f) return px;
+        for (var i = 0; i < BubbleCount; i++)
+        {
+            var bx = dx - bubbles[i * 3];
+            var by = dyl - bubbles[i * 3 + 1];
+            var br = bubbles[i * 3 + 2];
+            if (MathF.Abs(bx) > br * 1.3f || MathF.Abs(by) > br * 1.3f) continue;
+            var invR2 = 1f / (br * br);
+            var r2 = (bx * bx + by * by) * invR2;
+            if (r2 > 1.6f) continue;
+            var ringT = (r2 - 0.72f) / 0.35f;
+            var ring = MathF.Max(0f, 1f - ringT * ringT) * 0.30f;
+            var hx = bx + 0.38f * br;
+            var hy = by + 0.38f * br;
+            var spec = MathF.Max(0f, 1f - (hx * hx + hy * hy) * invR2 / 0.07f);
+            var light = (ring + spec * spec * 0.85f) * s.BubbleGain;
+            px = Px.Add(px, (0.55f + 0.45f * lr) * light, (0.60f + 0.40f * lg) * light, (0.70f + 0.30f * lb) * light, light);
+        }
+
+        return px;
     }
 
     private Px Outside(in Scene s, float dx, float dy, float distancePx)
@@ -350,146 +522,78 @@ public sealed class DropRenderer
             result = new Px(s.GlowR * a, s.GlowG * a, s.GlowB * a, a);
         }
 
-        // Faint contact shadow below, so the drop reads as a 3D object over light backgrounds.
+        // Broad soft shadow, tinted by what is behind (darker over light backdrops).
         var sdx = dx - Math.Clamp(dx, -s.CoreHalfLength, s.CoreHalfLength);
         var sdy = dy - s.ShadowOffset;
-        var sd = MathF.Sqrt(sdx * sdx + sdy * sdy) - s.ShadowRadius;
+        var sd = FastMath.Sqrt(sdx * sdx + sdy * sdy) - s.ShadowRadius;
         var sh = 1f - sd / s.ShadowSoftness;
+        var shadow = default(Px);
         if (sh > 0f)
         {
             sh = Math.Min(1f, sh);
             var a = sh * sh * s.ShadowAlpha;
-            result = Over(result, new Px(0f, 0f, 0f, a));
+            shadow = new Px(s.ShadowR * a, s.ShadowG * a, s.ShadowB * a, a);
         }
 
-        return result;
-    }
-
-    // Dark translucent capsule behind the caption so white text stays legible over light backgrounds.
-    private static void DrawCaptionPlate(Span<uint> pixels, int width, int height, TextMask text, float alpha, float dpiScale, float centerY)
-    {
-        var halfH = text.Height / 2f + 3f * dpiScale;
-        var halfW = text.Width / 2f + 10f * dpiScale;
-        var cx = width / 2f;
-        var core = MathF.Max(0f, halfW - halfH);
-        var y0 = Math.Max(0, (int)(centerY - halfH - 1));
-        var y1 = Math.Min(height - 1, (int)(centerY + halfH + 1));
-        var x0 = Math.Max(0, (int)(cx - halfW - 1));
-        var x1 = Math.Min(width - 1, (int)(cx + halfW + 1));
-        for (var y = y0; y <= y1; y++)
+        // Contact shadow: a tight, darker ellipse right under the drop so it reads as an object, not a sticker.
+        if (dy > s.ContactTop)
         {
-            for (var x = x0; x <= x1; x++)
+            var ex = dx * s.InvContactRx;
+            var ey = (dy - s.ContactY) * s.InvContactRy;
+            var e2 = ex * ex + ey * ey;
+            if (e2 < 1f)
             {
-                var dx = x + 0.5f - cx;
-                var dy = y + 0.5f - centerY;
-                var ex = dx - Math.Clamp(dx, -core, core);
-                var d = MathF.Sqrt(ex * ex + dy * dy) - halfH;
-                var a = Math.Clamp(0.5f - d, 0f, 1f) * alpha * CaptionPlateAlpha;
-                if (a <= 0f) continue;
-                var dst = pixels[y * width + x];
-                var inv = 1f - a;
-                var na = a + (dst >> 24) / 255f * inv;
-                pixels[y * width + x] = PackBytes(((dst >> 16) & 0xFF) / 255f * inv, ((dst >> 8) & 0xFF) / 255f * inv, (dst & 0xFF) / 255f * inv, na);
+                var q = 1f - e2;
+                var a = q * q * s.ContactAlpha;
+                shadow = Px.Over(new Px(s.ShadowR * a, s.ShadowG * a, s.ShadowB * a, a), shadow);
             }
         }
+
+        return Px.Over(result, shadow);
     }
 
-    private static void DrawText(Span<uint> pixels, int width, int height, TextMask text, float alpha, float centerX, float centerY)
-    {
-        var left = (int)MathF.Round(centerX - text.Width / 2f);
-        var top = (int)MathF.Round(centerY - text.Height / 2f);
-        for (var pass = 0; pass < 2; pass++)
-        {
-            var shadow = pass == 0;
-            var ox = shadow ? 1 : 0;
-            var oy = shadow ? 1 : 0;
-            for (var y = 0; y < text.Height; y++)
-            {
-                var py = top + y + oy;
-                if ((uint)py >= (uint)height) continue;
-                for (var x = 0; x < text.Width; x++)
-                {
-                    var px = left + x + ox;
-                    if ((uint)px >= (uint)width) continue;
-                    var cov = text.Coverage[y * text.Width + x] / 255f;
-                    if (cov <= 0f) continue;
-                    var a = cov * alpha * (shadow ? 0.55f : 1f);
-                    var dst = pixels[py * width + px];
-                    var inv = 1f - a;
-                    var v = shadow ? 0f : 1f;
-                    var na = a + ((dst >> 24) / 255f) * inv;
-                    var nr = v * a + ((dst >> 16) & 0xFF) / 255f * inv;
-                    var ng = v * a + ((dst >> 8) & 0xFF) / 255f * inv;
-                    var nb = v * a + (dst & 0xFF) / 255f * inv;
-                    pixels[py * width + px] = PackBytes(nr, ng, nb, na);
-                }
-            }
-        }
-    }
-
-    // ---- premultiplied color helpers ----
-
-    private readonly record struct Px(float R, float G, float B, float A);
-
-    private static Px Over(Px top, Px bottom)
-    {
-        var k = 1f - top.A;
-        return new Px(top.R + bottom.R * k, top.G + bottom.G * k, top.B + bottom.B * k, top.A + bottom.A * k);
-    }
-
-    private static Px Add(Px p, float r, float g, float b, float a) =>
-        new(p.R + r, p.G + g, p.B + b, Math.Min(1f, Math.Max(p.A, a) + 0.0f));
-
-    private static Px Scale(Px p, float k) => new(p.R * k, p.G * k, p.B * k, p.A * k);
-
-    private static float Smooth(float t)
-    {
-        t = Math.Clamp(t, 0f, 1f);
-        return t * t * (3f - 2f * t);
-    }
-
-    private static uint Pack(Px p, float opacity) => PackBytes(p.R * opacity, p.G * opacity, p.B * opacity, p.A * opacity);
-
-    private static uint PackBytes(float r, float g, float b, float a)
-    {
-        var ai = (uint)(Math.Clamp(a, 0f, 1f) * 255f + 0.5f);
-        var ri = Math.Min((uint)(Math.Clamp(r, 0f, 1f) * 255f + 0.5f), ai);
-        var gi = Math.Min((uint)(Math.Clamp(g, 0f, 1f) * 255f + 0.5f), ai);
-        var bi = Math.Min((uint)(Math.Clamp(b, 0f, 1f) * 255f + 0.5f), ai);
-        return (ai << 24) | (ri << 16) | (gi << 8) | bi;
-    }
-
-    /// <summary>Per-frame constants derived from the animation frame and DPI, so the pixel loop does no setup.</summary>
     private readonly struct Scene
     {
         public readonly float CenterX, CenterY, HalfWidth, HalfHeight, CoreHalfLength, InvRx, InvRy, EdgeScale;
-        public readonly float InvHalfW, InvHalfH;
+        public readonly float InvBoxW, InvBoxH, InvHalfWidth, Lean;
         public readonly float L1x, L1y, L2x, L2y, L3x, L3y, L4x, L4y;
         public readonly float LiquidGain, TranscribeMix, NoticeMix, RotCos, RotSin, HighlightSpread, GlossScale;
-        public readonly float Curve, RejectLen2;
+        public readonly float Curve, RejectLen2, Wobble, WobblePhase, BubbleGain;
         public readonly float GlowRange, GlowAlpha, GlowR, GlowG, GlowB;
-        public readonly float ShadowOffset, ShadowRadius, ShadowSoftness, ShadowAlpha;
+        public readonly float ShadowOffset, ShadowRadius, ShadowSoftness, ShadowAlpha, ShadowR, ShadowG, ShadowB;
+        public readonly float ContactTop, ContactY, InvContactRx, InvContactRy, ContactAlpha;
+        public readonly BackdropTexture? Tex;
+        public readonly float BackdropMix, BackdropX0, BackdropY0, BackdropSx, BackdropSy, RefractReach, EnvReach;
 
-        public Scene(in DropFrame f, int width, int height, float dpi, float noticeHalfWidth)
+        public Scene(in DropFrame f, int width, int height, float dpi, float noticeHalfWidth,
+            BackdropTexture? tex, float backdropMix, float pixelScale)
         {
             CenterX = width / 2f;
             CenterY = height / 2f;
 
+            // Volume-preserving squash/stretch: width x(1+e), height (and depth) x1/sqrt(1+e).
+            var (widthFactor, heightFactor) = DropStretch.Scales(f.Elongation);
             var orbR = DropLayout.OrbRadius * dpi * f.Radius;
             var noticeHalfH = DropLayout.NoticeHalfHeight * dpi;
             var noticeHalfW = noticeHalfWidth > 0f ? noticeHalfWidth : noticeHalfH;
             var m = f.Morph;
-            HalfHeight = (orbR + (noticeHalfH - orbR) * m) * f.Scale;
-            HalfWidth = (orbR + (noticeHalfW - orbR) * m) * f.Scale;
-            CoreHalfLength = Math.Max(0f, HalfWidth - HalfHeight);
+            var orbHalfH = orbR * heightFactor;
+            var orbHalfW = orbR * widthFactor;
+            HalfHeight = (orbHalfH + (noticeHalfH - orbHalfH) * m) * f.Scale;
+            HalfWidth = (orbHalfW + (noticeHalfW - orbHalfW) * m) * f.Scale;
+            // Elongated drops get elliptical end caps (organic) that tighten into a true capsule for the notice.
+            CoreHalfLength = Math.Max(0f, HalfWidth - HalfHeight) * (0.5f + 0.5f * m);
+            var capRx = Math.Max(1f, HalfWidth - CoreHalfLength);
+            InvHalfWidth = 1f / Math.Max(1f, HalfWidth);
+            Lean = f.Lean;
 
             var stretchX = 1f + f.Stretch;
             var stretchY = 1f - f.Stretch;
-            InvRx = 1f / (HalfHeight * stretchX);
+            InvRx = 1f / (capRx * stretchX);
             InvRy = 1f / (HalfHeight * stretchY);
-            EdgeScale = HalfHeight * Math.Min(stretchX, stretchY);
-            InvHalfW = 1f / (HalfWidth * stretchX);
-            InvHalfH = 1f / (HalfHeight * stretchY);
+            EdgeScale = Math.Min(capRx, HalfHeight) * Math.Min(stretchX, stretchY);
+            InvBoxW = 1f / (HalfWidth * stretchX);
+            InvBoxH = 1f / (HalfHeight * stretchY);
 
             L1x = f.Lobe1X; L1y = f.Lobe1Y; L2x = f.Lobe2X; L2y = f.Lobe2Y;
             L3x = f.Lobe3X; L3y = f.Lobe3Y; L4x = f.Lobe4X; L4y = f.Lobe4Y;
@@ -506,8 +610,11 @@ public sealed class DropRenderer
             Curve = 0.55f * (1f - m) * (1f - 0.7f * f.TranscribeMix);
             HighlightSpread = 1f + 0.35f * m;
             GlossScale = 1f;
+            Wobble = (0.018f + 0.05f * f.Ripple) * (1f - 0.8f * f.NoticeMix);
+            WobblePhase = f.Time * 1.7f + f.RipplePhase * 0.35f;
+            BubbleGain = (0.55f + 0.45f * f.Level) * (1f - f.NoticeMix);
 
-            GlowRange = GlowRangeFor(dpi);
+            GlowRange = GlowRangeDip * dpi;
             var rejectLen = 1.3f + GlowRange / EdgeScale;
             RejectLen2 = rejectLen * rejectLen;
             GlowAlpha = (0.10f + 0.34f * f.Level + 0.08f * f.TranscribeMix) * (1f - 0.4f * f.NoticeMix);
@@ -518,9 +625,39 @@ public sealed class DropRenderer
             ShadowOffset = HalfHeight * 0.30f;
             ShadowRadius = HalfHeight * 0.80f;
             ShadowSoftness = HalfHeight * 0.55f;
-            ShadowAlpha = 0.20f;
-        }
+            ContactTop = HalfHeight * 0.70f;
+            ContactY = HalfHeight * 1.14f;
+            InvContactRx = 1f / (HalfWidth * 0.86f);
+            InvContactRy = 1f / (HalfHeight * 0.30f);
 
-        private static float GlowRangeFor(float dpi) => GlowRangeDip * dpi;
+            Tex = tex;
+            BackdropMix = tex is null ? 0f : backdropMix;
+            RefractReach = HalfHeight * 1.05f;
+            EnvReach = HalfHeight * 1.9f;
+            if (tex is null || backdropMix <= 0f)
+            {
+                BackdropX0 = BackdropY0 = 0f;
+                BackdropSx = BackdropSy = 1f;
+                ShadowR = ShadowG = ShadowB = 0f;
+                ShadowAlpha = 0.20f;
+                ContactAlpha = 0.20f;
+            }
+            else
+            {
+                // Texel = (window px - origin) / pixelsPerTexel - 0.5, with window px = internal px / pixelScale.
+                BackdropSx = 1f / (pixelScale * tex.PixelsPerTexelX);
+                BackdropSy = 1f / (pixelScale * tex.PixelsPerTexelY);
+                BackdropX0 = -tex.OriginX / tex.PixelsPerTexelX - 0.5f;
+                BackdropY0 = -tex.OriginY / tex.PixelsPerTexelY - 0.5f;
+                tex.SampleTexel(BackdropX0 + CenterX * BackdropSx, BackdropY0 + (CenterY + HalfHeight * 1.4f) * BackdropSy, out var br, out var bg, out var bb);
+                var lum = 0.2126f * br + 0.7152f * bg + 0.0722f * bb;
+                var strength = 0.55f + 0.85f * lum;
+                ShadowR = br * 0.16f;
+                ShadowG = bg * 0.16f;
+                ShadowB = bb * 0.16f;
+                ShadowAlpha = Math.Min(0.30f, 0.14f * strength) * backdropMix + 0.20f * (1f - backdropMix);
+                ContactAlpha = Math.Min(0.55f, 0.30f * strength) * backdropMix + 0.20f * (1f - backdropMix);
+            }
+        }
     }
 }

@@ -21,16 +21,18 @@ public sealed class TextMask
 
     public static TextMask Empty { get; } = new([], 0, 0);
 
-    public static TextMask Create(string text, int fontPixels)
+    /// <summary>Rasterizes one line; <paramref name="preferVariableFont"/> tries Segoe UI Variable Text first and falls back to Segoe UI.</summary>
+    public static TextMask Create(string text, int fontPixels, int weight = 600, int letterSpacing = 0, bool preferVariableFont = false)
     {
         if (string.IsNullOrEmpty(text) || fontPixels <= 0) return Empty;
 
         var screenDc = GetDC(0);
         var dc = CreateCompatibleDC(screenDc);
-        var font = CreateFontW(-fontPixels, 0, 0, 0, 600, 0, 0, 0, 1, 0, 0, 4 /* ANTIALIASED_QUALITY */, 0, "Segoe UI");
+        var font = CreateBestFont(dc, fontPixels, weight, preferVariableFont);
         var oldFont = SelectObject(dc, font);
         try
         {
+            if (letterSpacing != 0) SetTextCharacterExtra(dc, letterSpacing);
             GetTextExtentPoint32W(dc, text, text.Length, out var extent);
             var width = extent.cx + 4;
             var height = extent.cy + 4;
@@ -74,6 +76,22 @@ public sealed class TextMask
         }
     }
 
+    private static nint CreateBestFont(nint dc, int fontPixels, int weight, bool preferVariable)
+    {
+        if (preferVariable)
+        {
+            var variable = CreateFontW(-fontPixels, 0, 0, 0, weight, 0, 0, 0, 1, 0, 0, 4 /* ANTIALIASED_QUALITY */, 0, "Segoe UI Variable Text");
+            var previous = SelectObject(dc, variable);
+            var face = new System.Text.StringBuilder(64);
+            _ = GetTextFaceW(dc, face.Capacity, face);
+            SelectObject(dc, previous);
+            if (face.ToString().Contains("Variable", StringComparison.OrdinalIgnoreCase)) return variable;
+            DeleteObject(variable);
+        }
+
+        return CreateFontW(-fontPixels, 0, 0, 0, weight, 0, 0, 0, 1, 0, 0, 4 /* ANTIALIASED_QUALITY */, 0, "Segoe UI");
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     private struct RECT { public int left, top, right, bottom; }
 
@@ -111,6 +129,8 @@ public sealed class TextMask
     [DllImport("gdi32.dll")] private static extern nint SelectObject(nint hdc, nint obj);
     [DllImport("gdi32.dll")] private static extern bool DeleteObject(nint obj);
     [DllImport("gdi32.dll")] private static extern int SetBkMode(nint hdc, int mode);
+    [DllImport("gdi32.dll")] private static extern int SetTextCharacterExtra(nint hdc, int extra);
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)] private static extern int GetTextFaceW(nint hdc, int count, System.Text.StringBuilder face);
     [DllImport("gdi32.dll")] private static extern uint SetTextColor(nint hdc, uint color);
     [DllImport("gdi32.dll")] private static extern nint CreateDIBSection(nint hdc, ref BITMAPINFO bmi, uint usage, out nint bits, nint section, uint offset);
     [DllImport("gdi32.dll", CharSet = CharSet.Unicode)] private static extern bool GetTextExtentPoint32W(nint hdc, string text, int count, out SIZE size);

@@ -38,12 +38,17 @@ public sealed class EffectRunner : IAsyncDisposable
     private readonly Dictionary<string, DateTimeOffset> createdUtc = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<Task, byte> running = new();
     private readonly CancellationTokenSource lifetime = new();
+    private readonly TimeSpan? transcribeCeilingOverride;
+
+    /// <summary>Fixed part of the transcription ceiling: covers the supervisor readiness wait plus the minimum request timeout.</summary>
+    public static readonly TimeSpan TranscribeCeilingBase = TimeSpan.FromSeconds(120);
 
     public EffectRunner(Action<DictationEvent> post, SidecarStore sidecars, string recordingsDir,
         Func<IAudioSource> audioSourceFactory, ITargetProbe targetProbe, ITranscriber transcriber, ITextOutput output,
         ITranscriptHistory? history = null, Func<IOverlayView?>? getOverlay = null, AudioLevelTracker? audioTracker = null,
-        Func<bool>? getAutoPaste = null, ISoundCuePlayer? soundPlayer = null)
+        Func<bool>? getAutoPaste = null, ISoundCuePlayer? soundPlayer = null, TimeSpan? transcribeCeiling = null)
     {
+        this.transcribeCeilingOverride = transcribeCeiling;
         this.post = post ?? throw new ArgumentNullException(nameof(post));
         this.sidecars = sidecars ?? throw new ArgumentNullException(nameof(sidecars));
         ArgumentException.ThrowIfNullOrWhiteSpace(recordingsDir);
@@ -168,7 +173,7 @@ public sealed class EffectRunner : IAsyncDisposable
         var activeOverlay = getOverlay?.Invoke();
         if (activeOverlay is not null && audioTracker is not null)
         {
-            sink = new OverlayAudioSink(writer, audioTracker, activeOverlay);
+            sink = new OverlayAudioSink(writer, audioTracker, activeOverlay, new VoiceLevelNormalizer());
         }
         var session = new CaptureSession(id, writer, source, started.Task, sink) { WavPath = wavPath };
         source.Faulted += fault => OnFaulted(session, fault);
@@ -296,9 +301,18 @@ public sealed class EffectRunner : IAsyncDisposable
         var fullPath = Path.GetFullPath(wavPath);
         transcribing[fullPath] = id;
         EngineTranscription result;
+        // Hard ceiling: an engine that never answers must not leave the overlay on Transcribing forever. The WAV stays on
+        // disk and the sidecar is marked failed, so the audio remains recoverable.
+        using var ceiling = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+        ceiling.CancelAfter(TranscribeCeiling(fullPath));
         try
         {
-            result = await transcriber.TranscribeAsync(fullPath, lifetime.Token).ConfigureAwait(false);
+            result = await transcriber.TranscribeAsync(fullPath, ceiling.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ceiling.IsCancellationRequested && !lifetime.IsCancellationRequested)
+        {
+            Log.Warning("Transcription exceeded its ceiling for {Id}", id);
+            result = new EngineTranscription("", "error", "transcription ceiling elapsed", OverlayNotices.TranscribeTimeoutCode, true, 0, 0, 0, 0, 0, 0, "", "", 0);
         }
         catch (Exception ex)
         {
@@ -307,6 +321,15 @@ public sealed class EffectRunner : IAsyncDisposable
         }
         finally { transcribing.TryRemove(fullPath, out _); }
         post(new TranscriptionCompleted(id, result, Environment.TickCount64));
+    }
+
+    private TimeSpan TranscribeCeiling(string wavPath)
+    {
+        if (transcribeCeilingOverride is { } fixedCeiling) return fixedCeiling;
+        double audioSeconds = 0;
+        try { audioSeconds = Math.Max(0, new FileInfo(wavPath).Length - 44) / 32000d; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* unknown length: base ceiling only */ }
+        return TranscribeCeilingBase + TimeSpan.FromSeconds(3 * audioSeconds);
     }
 
     // Harness-only delivery barrier (D-20): awaited asynchronously before TargetPaster; never in Release.
@@ -389,7 +412,10 @@ public sealed class EffectRunner : IAsyncDisposable
         {
             "silence_only" => OverlayNoticeKind.SilenceOnly,
             "no_speech" => OverlayNoticeKind.NothingDetected,
-            "error" => OverlayNotices.ForErrorCode(metrics.Reason),
+            // Capture failures already showed their own notice; transcription failures never vanish silently.
+            "error" => IsCaptureOrDeliveryFailure(metrics.Reason)
+                ? OverlayNotices.ForErrorCode(metrics.Reason)
+                : OverlayNotices.ForFailure(metrics.Reason),
             _ => null
         };
 
@@ -400,8 +426,18 @@ public sealed class EffectRunner : IAsyncDisposable
         }
 
         activeOverlay.ShowNotice(notice.Value);
-        _ = Task.Delay(1800).ContinueWith(_ => activeOverlay.Hide(), TaskScheduler.Default);
+        HideNoticeLater(activeOverlay, notice.Value is OverlayNoticeKind.EngineFailed or OverlayNoticeKind.TranscribeTimeout ? 4000 : 1800);
     }
+
+    private static bool IsCaptureOrDeliveryFailure(string? reason) =>
+        reason is "clipboard_failed" || reason?.StartsWith("capture_", StringComparison.Ordinal) == true;
+
+    /// <summary>Hides the notice after a delay, unless a newer recording already replaced it.</summary>
+    private static void HideNoticeLater(IOverlayView overlay, int delayMs) =>
+        _ = Task.Delay(delayMs).ContinueWith(_ =>
+        {
+            if (overlay.CurrentModel.Mode == OverlayMode.Notice) overlay.Hide();
+        }, TaskScheduler.Default);
 
     private void HandleStartFailureOverlay(string failureCode)
     {
@@ -411,22 +447,28 @@ public sealed class EffectRunner : IAsyncDisposable
         if (failureCode is "no_device")
         {
             activeOverlay.ShowNotice(OverlayNoticeKind.MicMissing);
-            _ = Task.Delay(1800).ContinueWith(_ => activeOverlay.Hide(), TaskScheduler.Default);
+            HideNoticeLater(activeOverlay, 1800);
         }
         else if (failureCode is "privacy_blocked")
         {
             activeOverlay.ShowNotice(OverlayNoticeKind.MicBlocked);
-            _ = Task.Delay(1800).ContinueWith(_ => activeOverlay.Hide(), TaskScheduler.Default);
+            HideNoticeLater(activeOverlay, 1800);
         }
     }
 
-    private sealed class OverlayAudioSink(IPcmSink inner, AudioLevelTracker tracker, IOverlayView overlay) : IPcmSink
+    /// <summary>
+    /// Feeds the orb: raw RMS is gain-normalized per recording (real microphone speech is only ~0.01-0.2 RMS, which
+    /// a linear 0..1 mapping leaves nearly invisible), then smoothed by the tracker.
+    /// </summary>
+    private sealed class OverlayAudioSink(IPcmSink inner, AudioLevelTracker tracker, IOverlayView overlay, VoiceLevelNormalizer normalizer) : IPcmSink
     {
+        private const float BytesPerSecond = 32000f; // 16 kHz mono PCM16
+
         public void Write(ReadOnlySpan<byte> pcm16kMonoS16)
         {
             inner.Write(pcm16kMonoS16);
-            tracker.Update(pcm16kMonoS16);
-            overlay.UpdateWaveform(tracker.GenerateWaveformBars(5));
+            var level = normalizer.Normalize(AudioLevelCalculator.ComputeRms(pcm16kMonoS16), pcm16kMonoS16.Length / BytesPerSecond);
+            overlay.UpdateWaveform(tracker.GenerateWaveformBars(5, tracker.Update(level)));
         }
     }
 }

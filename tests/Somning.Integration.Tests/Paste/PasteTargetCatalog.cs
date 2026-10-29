@@ -110,8 +110,11 @@ public static class PasteTargetCatalog
     private static void WriteBlankDocx(string path)
     {
         using var archive = ZipFile.Open(path, ZipArchiveMode.Create);
-        Add(archive, "[Content_Types].xml", "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/></Types>");
+        Add(archive, "[Content_Types].xml", "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/><Override PartName=\"/word/settings.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml\"/></Types>");
         Add(archive, "_rels/.rels", "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/></Relationships>");
+        Add(archive, "word/_rels/document.xml.rels", "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings\" Target=\"settings.xml\"/></Relationships>");
+        // compatibilityMode 15 avoids Word's "Compatibility Mode" (legacy) opening path.
+        Add(archive, "word/settings.xml", "<?xml version=\"1.0\" encoding=\"UTF-8\"?><w:settings xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:compat><w:compatSetting w:name=\"compatibilityMode\" w:uri=\"http://schemas.microsoft.com/office/word\" w:val=\"15\"/></w:compat></w:settings>");
         Add(archive, "word/document.xml", "<?xml version=\"1.0\" encoding=\"UTF-8\"?><w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body><w:p/></w:body></w:document>");
     }
 
@@ -150,6 +153,23 @@ public static class PasteTargetCatalog
             return false;
         }, 0);
         return result;
+    }
+
+    /// <summary>
+    /// Window class of the control that must hold the keyboard focus for a paste into the document to be meaningful:
+    /// the web-contents widget for Chromium apps (not the address bar or a dialog) and the Word document body.
+    /// </summary>
+    public static string ExpectedEditorClass(string id) => id switch
+    {
+        "chrome" or "edge" or "vscode" => "Chrome_RenderWidgetHostHWND",
+        "word" => "_WwG",
+        _ => throw new ArgumentException("Unknown paste target " + id, nameof(id))
+    };
+
+    public static string WindowClass(nint window)
+    {
+        var text = new StringBuilder(256);
+        return window == 0 || GetClassName(window, text, text.Capacity) == 0 ? string.Empty : text.ToString();
     }
 
     public static uint WindowProcessId(nint window)
@@ -212,6 +232,7 @@ public static class PasteTargetCatalog
 
     private delegate bool EnumWindowsProc(nint window, nint parameter);
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "GetClassNameW")] private static extern int GetClassName(nint window, StringBuilder text, int maxCount);
     [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc callback, nint parameter);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(nint window);
     [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "GetWindowTextLengthW")] private static extern int GetWindowTextLength(nint window);

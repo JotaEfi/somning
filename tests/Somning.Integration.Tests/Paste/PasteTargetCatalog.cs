@@ -89,8 +89,15 @@ public static class PasteTargetCatalog
             case "vscode":
                 var file = Path.Combine(tempDir, marker + ".txt");
                 File.WriteAllText(file, "");
+                // A fresh profile opens a modal "Welcome / sign in" dialog that takes keyboard focus and swallows the paste;
+                // pre-seed the temp profile so the editor is the focused control.
+                var userDir = Path.Combine(profile, "User");
+                Directory.CreateDirectory(userDir);
+                File.WriteAllText(Path.Combine(userDir, "settings.json"),
+                    "{\"workbench.startupEditor\":\"none\",\"chat.disableAIFeatures\":true,\"telemetry.telemetryLevel\":\"off\"," +
+                    "\"window.restoreWindows\":\"none\",\"security.workspace.trust.enabled\":false,\"update.mode\":\"none\"}");
                 return ["--new-window", "--user-data-dir", profile, "--extensions-dir", Path.Combine(tempDir, "extensions"),
-                    "--disable-extensions", file];
+                    "--disable-extensions", "--skip-welcome", "--skip-release-notes", "--disable-workspace-trust", file];
             case "word":
                 var document = Path.Combine(tempDir, marker + ".docx");
                 WriteBlankDocx(document);

@@ -11,7 +11,11 @@ using Somning.Core.Dictation;
 namespace Somning.App.TestHarness;
 
 /// <summary>Live values reported by the <c>status</c> command.</summary>
-public sealed record HarnessStatusSource(Func<string> Engine, Func<DictationState> State);
+public sealed record HarnessStatusSource(Func<string> Engine, Func<DictationState> State,
+    Func<int>? HookInstallCount = null, Func<int>? HookProbeSeen = null, Func<int>? WatchdogReinstalls = null);
+
+/// <summary>Headless controls: a synthetic tap on the key channel and a live in-memory auto-paste switch.</summary>
+public sealed record HarnessControls(Func<Task> InjectTapAsync, Action<bool> SetAutoPaste);
 
 /// <summary>
 /// Debug/SOMNING_TEST_HARNESS-only control channel (D-20, T-01-18): JSON lines over <c>\\.\pipe\somning-test</c>,
@@ -30,12 +34,14 @@ public sealed class HarnessPipeServer : IAsyncDisposable
     private readonly HarnessGate deliveryBarrier;
     private readonly HarnessGate recoveryGate;
     private readonly Action requestShutdown;
+    private readonly HarnessControls? controls;
     private readonly CancellationTokenSource lifetime = new();
     private Task serving = Task.CompletedTask;
 
     public HarnessPipeServer(HarnessJournal journal, HarnessStatusSource status, HarnessFixture fixture,
-        HarnessGate deliveryBarrier, HarnessGate recoveryGate, Action requestShutdown)
+        HarnessGate deliveryBarrier, HarnessGate recoveryGate, Action requestShutdown, HarnessControls? controls = null)
     {
+        this.controls = controls;
         this.journal = journal ?? throw new ArgumentNullException(nameof(journal));
         this.status = status ?? throw new ArgumentNullException(nameof(status));
         this.fixture = fixture ?? throw new ArgumentNullException(nameof(fixture));
@@ -146,6 +152,15 @@ public sealed class HarnessPipeServer : IAsyncDisposable
             case "arm-delivery-barrier": deliveryBarrier.Arm(); return Ok();
             case "release-delivery-barrier": deliveryBarrier.Release(); return Ok();
             case "release-recovery-gate": recoveryGate.Release(); return Ok();
+            case "inject-tap":
+                if (controls is null) return Error("unsupported");
+                await controls.InjectTapAsync().ConfigureAwait(false);
+                return Ok();
+            case "set-auto-paste":
+                if (controls is null || request["value"] is not JsonValue flag || !flag.TryGetValue<bool>(out var enabled))
+                    return Error("bad_request");
+                controls.SetAutoPaste(enabled);
+                return Ok();
             case "shutdown":
                 Log.Information("harness shutdown requested");
                 requestShutdown();
@@ -167,6 +182,9 @@ public sealed class HarnessPipeServer : IAsyncDisposable
             ["last_seq"] = journal.LastSeq,
             ["recovery_complete"] = journal.Contains("recovery_complete"),
             ["delivery_barrier_armed"] = deliveryBarrier.IsArmed,
+            ["hook_install_count"] = status.HookInstallCount?.Invoke() ?? 0,
+            ["hook_probe_seen"] = status.HookProbeSeen?.Invoke() ?? 0,
+            ["watchdog_reinstalls"] = status.WatchdogReinstalls?.Invoke() ?? 0,
             ["pid"] = Environment.ProcessId
         };
     }

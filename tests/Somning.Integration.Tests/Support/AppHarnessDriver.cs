@@ -13,7 +13,8 @@ public sealed record HarnessEvent(long Seq, string Kind, string? Id, JsonObject?
     public long MetricLong(string name) => Metrics?[name]?.GetValue<long>() ?? 0;
 }
 
-public sealed record HarnessStatus(string Engine, string Phase, bool Hook, long LastSeq, bool RecoveryComplete);
+public sealed record HarnessStatus(string Engine, string Phase, bool Hook, long LastSeq, bool RecoveryComplete,
+    int HookInstallCount = 0, int HookProbeSeen = 0, int WatchdogReinstalls = 0);
 
 /// <summary>
 /// Launches Somning.App in harness mode (<c>--test-harness --fixture &lt;wav&gt;</c>) and drives it over the harness
@@ -140,7 +141,23 @@ public sealed class AppHarnessDriver : IDisposable
     {
         var reply = await SendAsync(new JsonObject { ["cmd"] = "status" }, TimeSpan.FromSeconds(10));
         return new HarnessStatus(reply["engine"]!.GetValue<string>(), reply["phase"]!.GetValue<string>(),
-            reply["hook"]!.GetValue<bool>(), reply["last_seq"]!.GetValue<long>(), reply["recovery_complete"]!.GetValue<bool>());
+            reply["hook"]!.GetValue<bool>(), reply["last_seq"]!.GetValue<long>(), reply["recovery_complete"]!.GetValue<bool>(),
+            reply["hook_install_count"]?.GetValue<int>() ?? 0, reply["hook_probe_seen"]?.GetValue<int>() ?? 0,
+            reply["watchdog_reinstalls"]?.GetValue<int>() ?? 0);
+    }
+
+    /// <summary>Headless quick tap through the key channel (no SendInput, no foreground dependency).</summary>
+    public async Task InjectTapAsync() => await SendOkAsync(new JsonObject { ["cmd"] = "inject-tap" });
+
+    /// <summary>Changes the live auto-paste switch in memory only (settings.json is not touched).</summary>
+    public async Task SetAutoPasteAsync(bool enabled) =>
+        await SendOkAsync(new JsonObject { ["cmd"] = "set-auto-paste", ["value"] = enabled });
+
+    private async Task SendOkAsync(JsonObject request)
+    {
+        var reply = await SendAsync(request, TimeSpan.FromSeconds(10));
+        if (reply["ok"]?.GetValue<bool>() != true)
+            throw new InvalidOperationException(request["cmd"] + " failed: " + reply.ToJsonString());
     }
 
     public async Task<long> LastSeqAsync() => (await StatusAsync()).LastSeq;

@@ -251,6 +251,19 @@ public sealed class AppComposition : IAsyncDisposable
         return DefaultHookWatchdogInterval;
     }
 
+#if SOMNING_TEST_HARNESS
+    /// <summary>
+    /// Headless tap: emits the same TriggerDown/TriggerUp pair the hook produces for a quick tap straight into the
+    /// key channel, so the single-writer loop sees a normal toggle without any OS input.
+    /// </summary>
+    public async Task InjectTapAsync()
+    {
+        keys.Writer.TryWrite(new KeyEvent(KeyEventKind.TriggerDown, Environment.TickCount64, true));
+        await Task.Delay(40).ConfigureAwait(false);
+        keys.Writer.TryWrite(new KeyEvent(KeyEventKind.TriggerUp, Environment.TickCount64, true));
+    }
+#endif
+
     /// <summary>Starts the single-writer loop, its 50 ms tick and the hook pump (the hook itself is started by Program).</summary>
     public void StartLoop() => Host.Start(Runner.Run, keys.Reader);
 

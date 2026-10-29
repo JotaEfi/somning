@@ -6,6 +6,6 @@
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <InvariantGlobalization>false</InvariantGlobalization>
-    <DefineConstants Condition="'$(Configuration)' == 'Debug'">$(DefineConstants);SOMNING_TEST_HARNESS</DefineConstants>
+    <DefineConstants Condition="'$(Configuration)' == 'Debug' Or '$(SomningHarness)' == 'true'">$(DefineConstants);SOMNING_TEST_HARNESS</DefineConstants>
   </PropertyGroup>
 </Project>

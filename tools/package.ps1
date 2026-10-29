@@ -1,12 +1,22 @@
 ﻿param(
     [string]$Configuration = 'Release',
-    [string]$OutputDir = (Join-Path $PSScriptRoot '..\publish\package')
+    [string]$OutputDir,
+    [switch]$WithHarness
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path $PSScriptRoot -Parent
+if (-not $OutputDir) {
+    $leaf = if ($WithHarness) { 'package-harness' } else { 'package' }
+    $OutputDir = Join-Path $root "publish\$leaf"
+}
+$harnessArgs = @()
+if ($WithHarness) {
+    $harnessArgs = @('-p:SomningHarness=true')
+    Write-Host "WARNING: harness package exposes the somning-test pipe. FOR TEST USE ONLY - never install or distribute it." -ForegroundColor Red
+}
 $output = [System.IO.Path]::GetFullPath($OutputDir)
 $engineOutput = Join-Path $output 'engine'
 
@@ -23,11 +33,11 @@ New-Item -ItemType Directory -Path $output,$engineOutput -Force | Out-Null
 Push-Location $root
 try {
     Write-Host "`n[1/4] Publishing Somning.App (win-x64 self-contained)..." -ForegroundColor Yellow
-    & dotnet publish src/Somning.App -c $Configuration -r win-x64 --self-contained -o $output --nologo
+    & dotnet publish src/Somning.App -c $Configuration -r win-x64 --self-contained -o $output $harnessArgs --nologo
     if ($LASTEXITCODE -ne 0) { throw "Somning.App publish failed with exit code $LASTEXITCODE" }
 
     Write-Host "`n[2/4] Publishing Somning.Engine (win-x64 self-contained)..." -ForegroundColor Yellow
-    & dotnet publish src/Somning.Engine -c $Configuration -r win-x64 --self-contained -o $engineOutput --nologo
+    & dotnet publish src/Somning.Engine -c $Configuration -r win-x64 --self-contained -o $engineOutput $harnessArgs --nologo
     if ($LASTEXITCODE -ne 0) { throw "Somning.Engine publish failed with exit code $LASTEXITCODE" }
 } finally {
     Pop-Location
@@ -60,6 +70,7 @@ $manifest = @{
     Package = "Somning"
     Configuration = $Configuration
     Runtime = "win-x64"
+    Harness = [bool]$WithHarness
     BuiltAt = [DateTime]::UtcNow.ToString("o")
     AppExecutable = "Somning.App.exe"
     EngineExecutable = "engine\Somning.Engine.exe"

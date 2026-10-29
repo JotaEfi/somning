@@ -88,11 +88,15 @@ internal sealed class E2EFixtureSupport : IDisposable
         Assert.Equal("pasted", outcome.Outcome);
         var text = Notepad.WaitForText(ClipboardProbe.ReadText(), TimeSpan.FromSeconds(3));
         Assert.NotEmpty(text);
-        Assert.Equal(text, ClipboardProbe.ReadText());
-        Assert.Equal(text, text.Trim());
+        var clipboardText = ClipboardProbe.ReadText();
+        Assert.True(text == clipboardText,
+            $"Notepad text differs from the clipboard (a leading space here means a hotkey Space leaked into Notepad): notepad='{Escape(text)}' clipboard='{Escape(clipboardText)}'");
+        Assert.True(text == text.Trim(), $"Pasted text has leading/trailing whitespace: '{Escape(text)}'");
         Assert.DoesNotContain('\n', text); Assert.DoesNotContain('\r', text);
         if (accuracy) Assert.True(Wer.Compute(expected, text) <= 0.10, $"WER exceeded 0.10: {text}");
     }
+
+    private static string Escape(string value) => value.Replace("\r", "\\r").Replace("\n", "\\n").Replace("\t", "\\t");
 
     public void AssertLayoutUnchanged() => Assert.Equal(LayoutBefore, CurrentLayout(Notepad.Window));
     public void Dispose() { HotkeyInjector.ReleaseAll(); Notepad.Dispose(); App.Dispose(); }

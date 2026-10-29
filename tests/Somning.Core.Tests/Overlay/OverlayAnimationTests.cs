@@ -73,8 +73,9 @@ public sealed class OverlayAnimationTests
     [Fact]
     public void Appear_starts_small_overshoots_then_settles_at_full_size()
     {
+        // Listening emerges from the screen edge (DropEmergenceTests); the other modes keep the elastic pop-in.
         var animator = new OverlayAnimator();
-        animator.Show(OverlayMode.Listening);
+        animator.Show(OverlayMode.Transcribing);
         animator.Tick(Frame);
         Assert.True(animator.Frame.Scale < 0.3f, $"born small, got {animator.Frame.Scale}");
 

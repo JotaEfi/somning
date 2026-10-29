@@ -15,6 +15,13 @@ namespace Somning.Core.Overlay;
 /// <param name="Lean">Teardrop asymmetry, positive = fat end on the right.</param>
 /// <param name="Ripple">0..1 surface ripple energy from phoneme transients.</param>
 /// <param name="RipplePhase">Ripple wave phase in radians.</param>
+/// <param name="Rise">Entrance: drop center between the screen edge (0) and its resting place (1).</param>
+/// <param name="Squash">Entrance: volume-preserving vertical elongation (positive = taller).</param>
+/// <param name="Goo">Entrance: 0..1 presence of the edge mound and filament (see <see cref="EmergeShape"/>).</param>
+/// <param name="Neck">Entrance: filament radius at the pinch point, in drop radii.</param>
+/// <param name="TopTail">Entrance: remaining fraction of the upper filament after the snap.</param>
+/// <param name="BottomTail">Entrance: remaining fraction of the lower filament after the snap.</param>
+/// <param name="Pool">Entrance: radius of the mound at the screen edge, in drop radii.</param>
 /// <param name="Lobe1X">Complex coefficients of the radial lobes (mode k adds a*cos(k*theta + phase)).</param>
 public readonly record struct DropFrame(
     OverlayMode Mode,
@@ -34,8 +41,18 @@ public readonly record struct DropFrame(
     float Elongation = 0f,
     float Lean = 0f,
     float Ripple = 0f,
-    float RipplePhase = 0f)
+    float RipplePhase = 0f,
+    float Rise = 1f,
+    float Squash = 0f,
+    float Goo = 0f,
+    float Neck = 0f,
+    float TopTail = 0f,
+    float BottomTail = 0f,
+    float Pool = 0f)
 {
+    /// <summary>True while the viscous entrance (edge mound / filament) must be drawn from the screen edge.</summary>
+    public bool IsEmerging => Goo > 0f || Rise < 0.999f || Rise > 1.001f;
+
     /// <summary>Neutral frame for the mode: full size, opaque, no voice, no lobes.</summary>
     public static DropFrame Static(OverlayMode mode) => new(
         mode, 1f, 1f, 0f, 0f, 1f, 0f,

@@ -38,6 +38,9 @@ public sealed class OverlayAnimator
     private float noticeMix;
     private bool isShowing;
     private bool isHidden = true;
+    private bool isEmerging;
+    private float emergeSeconds;
+    private EmergeShape emerge = EmergeShape.Rest;
     private OverlayMode mode = OverlayMode.Hidden;
     private DropFrame frame = DropFrame.Static(OverlayMode.Hidden);
 
@@ -48,7 +51,7 @@ public sealed class OverlayAnimator
     /// redrawn at a lower rate (about 30 fps) without visible judder, halving CPU use during silence, transcribing and notices.
     /// </summary>
     public bool IsCalm =>
-        !isHidden && isShowing && fade >= 1f && level < 0.04f && MathF.Abs(scale.Value - 1f) < 0.01f && MathF.Abs(scale.Velocity) < 0.08f
+        !isHidden && isShowing && !isEmerging && fade >= 1f && level < 0.04f && MathF.Abs(scale.Value - 1f) < 0.01f && MathF.Abs(scale.Velocity) < 0.08f
         && MathF.Abs(morph.Value - (mode == OverlayMode.Notice ? 1f : 0f)) < 0.01f
         && MathF.Abs(transcribeMix - (mode == OverlayMode.Transcribing ? 1f : 0f)) < 0.01f
         && MathF.Abs(noticeMix - (mode == OverlayMode.Notice ? 1f : 0f)) < 0.01f
@@ -85,6 +88,11 @@ public sealed class OverlayAnimator
             dropStretch.Reset();
             drive = 0f;
             isHidden = false;
+            // Listening rises out of the bottom screen edge as pulled goo; other modes keep the elastic pop-in.
+            isEmerging = newMode == OverlayMode.Listening;
+            emergeSeconds = 0f;
+            emerge = isEmerging ? DropEmergence.Evaluate(0f) : EmergeShape.Rest;
+            if (isEmerging) scale.Reset(1f);
         }
 
         mode = newMode;
@@ -108,6 +116,7 @@ public sealed class OverlayAnimator
         var dt = Math.Clamp(deltaSeconds, 0f, MaxDeltaSeconds);
         seconds += dt;
 
+        StepEmergence(dt);
         StepVisibility(dt);
         StepVoice(dt);
         StepPalette(dt);
@@ -116,10 +125,26 @@ public sealed class OverlayAnimator
         return IsActive;
     }
 
+    private void StepEmergence(float dt)
+    {
+        if (!isEmerging) return;
+        emergeSeconds += dt;
+        emerge = DropEmergence.Evaluate(emergeSeconds);
+        if (emerge.Active) return;
+        isEmerging = false;
+        emerge = EmergeShape.Rest;
+    }
+
     private void StepVisibility(float dt)
     {
         if (isShowing)
         {
+            if (isEmerging)
+            {
+                fade = 1f;   // the mound itself is the reveal: it starts hidden below the screen edge
+                return;
+            }
+
             fade = Math.Min(1f, fade + dt / EnterFadeSeconds);
             scale.Step(1f, 19f, 0.46f, dt);
             return;
@@ -137,7 +162,7 @@ public sealed class OverlayAnimator
     private void StepVoice(float dt)
     {
         drive = mode == OverlayMode.Listening && isShowing
-            ? normalizer.Update(rawLevel, dt)
+            ? normalizer.Update(rawLevel, dt) * emerge.VoiceGate
             : 0f;
         var previous = level;
         var tau = drive > level ? 0.032f : 0.15f;
@@ -199,7 +224,7 @@ public sealed class OverlayAnimator
         frame = new DropFrame(
             mode,
             eased,
-            Math.Clamp(scale.Value, 0f, 1.4f),
+            Math.Clamp(scale.Value * emerge.Size, 0f, 1.4f),
             flowTime,
             level,
             Math.Clamp(radius.Value, 0.8f, 1.3f),
@@ -214,6 +239,13 @@ public sealed class OverlayAnimator
             dropStretch.Elongation * lobeScale,
             dropStretch.Lean * lobeScale,
             dropStretch.Ripple * lobeScale,
-            dropStretch.RipplePhase);
+            dropStretch.RipplePhase,
+            emerge.Rise,
+            emerge.Squash,
+            emerge.Goo,
+            emerge.Neck,
+            emerge.TopTail,
+            emerge.BottomTail,
+            emerge.Pool);
     }
 }

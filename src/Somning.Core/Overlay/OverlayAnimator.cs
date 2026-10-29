@@ -140,11 +140,11 @@ public sealed class OverlayAnimator
             ? normalizer.Update(rawLevel, dt)
             : 0f;
         var previous = level;
-        var tau = drive > level ? 0.05f : 0.28f;
+        var tau = drive > level ? 0.032f : 0.15f;
         level += (drive - level) * (1f - MathF.Exp(-dt / tau));
 
         // Onsets kick the squash/stretch spring so words "hit" the drop.
-        stretch.Velocity += (level - previous) * 1.4f;
+        stretch.Velocity += (level - previous) * 2.4f;
     }
 
     private void StepPalette(float dt)

@@ -9,12 +9,12 @@ namespace Somning.Core.Overlay;
 /// </summary>
 public sealed class DropStretch
 {
-    public const float MaxElongation = 0.5f;
+    public const float MaxElongation = 0.62f;
     public const float MaxLean = 0.12f;
-    private const float AttackSeconds = 0.06f;
-    private const float ReleaseSeconds = 0.30f;
-    private const float FastAttackSeconds = 0.022f;
-    private const float FastReleaseSeconds = 0.14f;
+    private const float AttackSeconds = 0.035f;
+    private const float ReleaseSeconds = 0.19f;
+    private const float FastAttackSeconds = 0.012f;
+    private const float FastReleaseSeconds = 0.075f;
     private const float TwoPi = MathF.PI * 2f;
 
     private Spring elongation = new(0f);
@@ -68,10 +68,10 @@ public sealed class DropStretch
 
         var breath = 0.014f * (1f - body) * MathF.Sin(TwoPi * clock / 2.7f);
         var shaped = MathF.Pow(body, 0.85f);
-        var target = MaxElongation * (0.82f * shaped + 0.6f * transient) + breath + 0.07f * idle;
+        var target = MaxElongation * (0.82f * shaped + 1.25f * transient) + breath + 0.07f * idle;
         target = Math.Clamp(target, -0.02f, MaxElongation);
 
-        elongation.Step(target, 15f, 0.5f, dt);
+        elongation.Step(target, 25f, 0.48f, dt);
         elongation.Value = Math.Clamp(elongation.Value, -0.04f, MaxElongation * 1.12f);
 
         // Trailing end: the fat side leans against the direction of motion; a slow drift keeps it alive.
@@ -80,8 +80,8 @@ public sealed class DropStretch
         lean.Step(leanTarget, 9f, 0.7f, dt);
         lean.Value = Math.Clamp(lean.Value, -MaxLean, MaxLean);
 
-        Ripple = Math.Clamp(transient * 3.2f + 0.3f * body, 0f, 1f);
-        ripplePhase += dt * (2.0f + 6f * Ripple);
+        Ripple = Math.Clamp(transient * 5.0f + 0.38f * body, 0f, 1f);
+        ripplePhase += dt * (2.0f + 10f * Ripple);
         if (ripplePhase > TwoPi * 8f) ripplePhase -= TwoPi * 8f;
     }
 }

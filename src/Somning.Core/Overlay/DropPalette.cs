@@ -7,14 +7,14 @@ public static class DropPalette
     public const int FloatsPerBlob = 3;
     public const int Length = BlobCount * FloatsPerBlob;
 
-    // Listening: Siri-like blue, orange, pink, white and a second blue.
+    // Listening: graphite and silver; never introduce a hue into the glass.
     private static readonly float[] Listening =
     [
-        0.14f, 0.40f, 1.00f,
-        1.00f, 0.50f, 0.10f,
-        1.00f, 0.26f, 0.56f,
-        0.92f, 0.86f, 0.96f,
-        0.30f, 0.62f, 1.00f
+        0.06f, 0.06f, 0.06f,
+        0.12f, 0.12f, 0.12f,
+        0.22f, 0.22f, 0.22f,
+        0.76f, 0.76f, 0.76f,
+        0.10f, 0.10f, 0.10f
     ];
 
     // Transcribing: calm cyan / violet / indigo.

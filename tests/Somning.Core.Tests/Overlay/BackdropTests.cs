@@ -47,6 +47,20 @@ public sealed class BackdropTests
     }
 
     [Fact]
+    public void Reduction_keeps_small_text_strokes_for_the_lens()
+    {
+        var pixels = new uint[120 * 60];
+        Array.Fill(pixels, 0xFFFFFFFFu);
+        for (var y = 0; y < 60; y++)
+            for (var x = 48; x < 51; x++) pixels[y * 120 + x] = 0xFF000000u;
+        var texture = new BackdropTexture(80, 40);
+        new BackdropReducer().Reduce(pixels, 120, 60, texture);
+        texture.SampleTexel(32f, 20f, out var stroke, out _, out _);
+        texture.SampleTexel(30f, 20f, out var paper, out _, out _);
+        Assert.True(paper - stroke > 0.8f, "3px lettering must survive reduction without broad blur");
+    }
+
+    [Fact]
     public void Reducer_rejects_a_buffer_smaller_than_the_declared_size()
     {
         Assert.Throws<ArgumentException>(() => new BackdropReducer().Reduce(new uint[10], 20, 20, new BackdropTexture(4, 4)));

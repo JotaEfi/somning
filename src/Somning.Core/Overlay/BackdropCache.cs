@@ -10,10 +10,10 @@ public sealed class BackdropCache
 {
     public const float CaptureIntervalSeconds = 1f / 15f;
     public const float MarginDip = 40f;
-    public const float TexelDip = 4f;
-    public const int MaxTexelsPerSide = 96;
+    public const float TexelDip = 1.5f;
+    public const int MaxTexelsPerSide = 224;
     public const int MaxConsecutiveFailures = 3;
-    private const float SmoothSeconds = 0.09f;
+    private const float SmoothSeconds = 0.045f;
     private const float AvailabilitySeconds = 0.25f;
 
     private readonly IBackdropSource? source;

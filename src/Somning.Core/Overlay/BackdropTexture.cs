@@ -3,7 +3,7 @@ using System.Runtime.CompilerServices;
 namespace Somning.Core.Overlay;
 
 /// <summary>
-/// Small blurred RGB picture (floats 0..1) of the area behind the overlay. It is the only form in which screen
+/// Small reduced RGB picture (floats 0..1) of the area behind the overlay. It is the only form in which screen
 /// content is ever held in memory. Maps to window pixel space through <see cref="OriginX"/>/<see cref="OriginY"/>
 /// (top-left, window pixels) and <see cref="PixelsPerTexelX"/>/<see cref="PixelsPerTexelY"/>.
 /// </summary>

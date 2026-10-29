@@ -142,6 +142,25 @@ public sealed class OverlayAnimationTests
     }
 
     [Theory]
+    [InlineData(0.01f, 0.5f, 0.15f)]
+    [InlineData(0.05f, 0.8f, 0.25f)]
+    [InlineData(0.2f, 0.8f, 0.25f)]
+    public void Speech_onset_reaches_the_waves_and_splash_within_100ms(float rms, float minimumLevel, float minimumElongation)
+    {
+        var animator = new OverlayAnimator();
+        animator.Show(OverlayMode.Listening);
+        Run(animator, 1f);
+        for (var i = 0; i < 6; i++)
+        {
+            animator.SetLevel(rms);
+            animator.Tick(Frame);
+        }
+        Assert.True(animator.Frame.Level > minimumLevel, $"level {animator.Frame.Level}");
+        Assert.True(animator.Frame.Elongation > minimumElongation, $"splash {animator.Frame.Elongation}");
+        Assert.True(animator.Frame.Ripple > 0.2f, $"ripple {animator.Frame.Ripple}");
+    }
+
+    [Theory]
     [InlineData(0.0005f)]
     [InlineData(0.002f)]
     [InlineData(0.003f)]

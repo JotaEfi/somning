@@ -536,7 +536,8 @@ $pasteRun = Invoke-XunitXml $integrationExe @('-method', '*PasteTargetMatrixTest
 $pasteTests = $pasteRun.Tests
 foreach ($app in @(@('chrome', 'Chrome'), @('edge', 'Edge'), @('vscode', 'VS Code'), @('word', 'Word'))) {
     $id = $app[0]
-    $t = $pasteTests | Where-Object { $_.Name -match ('"' + [regex]::Escape($id) + '"') } | Select-Object -First 1
+    # xunit v3 renders the theory data as (id: \"chrome\") with backslash-escaped quotes, so the match tolerates the backslash.
+    $t = $pasteTests | Where-Object { $_.Name -match ('id:\s*[^"]?"' + [regex]::Escape($id) + '[^"]?"') } | Select-Object -First 1
     $missing = if ($pasteRun.Note) { $pasteRun.Note } else { "no result for target '$id' in the runner output (exit $($pasteRun.Exit))" }
     $m = Convert-TestStatus $t ($app[1] + ' received the pasted sentinel text via Ctrl+V and clipboard read-back matched') $missing $pasteRun
     if ($m.Status -eq 'SKIPPED' -and $t.Reason -match 'not installed') { $m = [pscustomobject]@{ Status = 'SKIPPED'; Evidence = 'not installed on this machine' } }

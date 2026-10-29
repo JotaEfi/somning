@@ -17,6 +17,8 @@ public sealed class SoakTests
     private const string FixtureName = "tracer/hoje";
     private const int DefaultIterations = 50;
     private const int BaselineIteration = 3;
+    private const string Sentinel = "SOMNING-SOAK-SENTINEL-NAO-COLAR";
+    private const double TranscriptMaxWer = 0.10;
     private static readonly TimeSpan OutcomeTimeout = TimeSpan.FromMinutes(2);
 
     [Fact]
@@ -44,7 +46,7 @@ public sealed class SoakTests
         var failureNotes = new List<string>();
         for (var i = 1; i <= iterations; i++)
         {
-            var ok = await RunIterationAsync(app, perIteration, failureNotes, i, token);
+            var ok = await RunIterationAsync(app, perIteration, expected, failureNotes, i, token);
             if (!ok) failures++;
             completed++;
             last = Sample(app.Process.Id);
@@ -68,10 +70,11 @@ public sealed class SoakTests
     private static int ReadIterations() =>
         int.TryParse(Environment.GetEnvironmentVariable("SOMNING_SOAK_N"), out var n) && n >= 1 ? n : DefaultIterations;
 
-    private static async Task<bool> RunIterationAsync(AppHarnessDriver app, TimeSpan duration, List<string> notes, int index, CancellationToken token)
+    private static async Task<bool> RunIterationAsync(AppHarnessDriver app, TimeSpan duration, string expected, List<string> notes, int index, CancellationToken token)
     {
         try
         {
+            E2EFixtureSupport.SetClipboard(Sentinel); // a stale clipboard from the previous iteration must not pass
             var afterSeq = await app.LastSeqAsync();
             await app.InjectTapAsync();
             await Task.Delay(duration, token);
@@ -84,9 +87,15 @@ public sealed class SoakTests
                 notes.Add($"iteration {index}: outcome {outcome.Outcome}/{outcome.Reason}");
                 return false;
             }
-            if (string.IsNullOrWhiteSpace(ClipboardProbe.ReadText()))
+            var text = ClipboardProbe.ReadText();
+            if (text == Sentinel || string.IsNullOrWhiteSpace(text))
             {
-                notes.Add($"iteration {index}: clipboard empty");
+                notes.Add($"iteration {index}: clipboard was not replaced by the transcript");
+                return false;
+            }
+            if (text != text.Trim() || Wer.Compute(expected, text) > TranscriptMaxWer)
+            {
+                notes.Add($"iteration {index}: unexpected transcript '{text}' (WER limit {TranscriptMaxWer})");
                 return false;
             }
             return true;
@@ -114,8 +123,12 @@ public sealed class SoakTests
             var target = await app.WaitEventAsync("target_captured", afterSeq, null, TimeSpan.FromSeconds(20));
             var outcome = await app.WaitEventAsync("outcome", target.Seq - 1, target.Id, OutcomeTimeout);
             if (outcome.Outcome != "pasted") return false;
-            var text = notepad.WaitForText(ClipboardProbe.ReadText(), TimeSpan.FromSeconds(3));
-            return !string.IsNullOrWhiteSpace(text) && Wer.Compute(expected, text) <= 0.10;
+            var clipboardText = ClipboardProbe.ReadText();
+            var text = notepad.WaitForText(clipboardText, TimeSpan.FromSeconds(3));
+            // Same invariants as E2EFixtureSupport.AssertPasted: what Notepad shows equals the clipboard, with no extra
+            // leading/trailing whitespace (a leaked hotkey Space), no line breaks, and an accurate transcript.
+            return !string.IsNullOrWhiteSpace(text) && text == clipboardText && text == text.Trim()
+                && !text.Contains('\n') && !text.Contains('\r') && Wer.Compute(expected, text) <= TranscriptMaxWer;
         }
         catch (TimeoutException) { return false; }
         finally { HotkeyInjector.ReleaseAll(); }

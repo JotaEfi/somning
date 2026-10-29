@@ -89,7 +89,7 @@ internal static class Scenarios
         }
 
         // Hi-DPI check and the reflection toggled off, for comparison.
-        foreach (var desk in new[] { Desk.Wallpaper, Desk.Document })
+        foreach (var desk in new[] { Desk.Wallpaper, Desk.Document, Desk.Clock, Desk.Code })
         {
             var run = States()[4].Build(desk, 3f, true);
             var f = Compose(run, desk);
@@ -133,7 +133,7 @@ internal static class Scenarios
         var (text, w, h) = run.Layout();
         var pixels = new uint[w * h];
         var caption = run.Mode == OverlayMode.Transcribing ? DropLayout.CreateCaption(OverlayText.Transcribing, run.Dpi) : TextMask.Empty;
-        var renderer = new DropRenderer { NativeDpiLimit = float.MaxValue };
+        var renderer = new DropRenderer();
         renderer.Render(pixels, w, h, run.Dpi, run.Animator.Frame, text, DropLayout.NoticeHalfWidth(text.Width, run.Dpi), caption, run.Cache.Texture, run.Cache.Availability);
 
         var rgb = new byte[w * h * 3];

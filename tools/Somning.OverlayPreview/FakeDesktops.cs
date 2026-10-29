@@ -1,6 +1,8 @@
+using Somning.Platform.Windows.Overlay;
+
 namespace Somning.OverlayPreview;
 
-internal enum Desk { Wallpaper, Document, Code, Red }
+internal enum Desk { Wallpaper, Document, Code, Red, Clock }
 
 /// <summary>Procedural fake desktops (virtual 1920x1080 screen, taskbar below y=1040) used as backdrops for headless previews.</summary>
 internal static class FakeDesktops
@@ -8,6 +10,11 @@ internal static class FakeDesktops
     public const int ScreenWidth = 1920;
     public const int ScreenHeight = 1080;
     public const int WorkBottom = 1040;
+
+    private static readonly TextMask ClockTime = TextMask.Create("17:06", 64, 350);
+    private static readonly TextMask ClockDate = TextMask.Create("QUI 29 OUT", 22, 400);
+    private static readonly TextMask DocumentLine = TextMask.Create("A voz vira texto com Somning.", 18, 400);
+    private static readonly TextMask CodeLine = TextMask.Create("var audio = await Listen();", 18, 400);
 
     /// <summary>Pixel 0xAARRGGBB of a fake desktop at virtual screen coordinates.</summary>
     public static uint Pixel(Desk desk, int x, int y)
@@ -18,9 +25,30 @@ internal static class FakeDesktops
             Desk.Wallpaper => Wallpaper(x, y),
             Desk.Document => Document(x, y),
             Desk.Code => Code(x, y),
+            Desk.Clock => (0.34f + 0.12f * (y - 800f) / 280f, 0.31f + 0.10f * (x - 800f) / 400f, 0.28f),
             _ => Red(x, y)
         };
-        return Pack(r, g, b);
+        var bg = Pack(r, g, b);
+        if (desk == Desk.Clock)
+        {
+            bg = Glyph(bg, ClockDate, x - 901, y - 875, 0xFFF5F1EBu);
+            return Glyph(bg, ClockTime, x - 884, y - 907, 0xFFF5F1EBu);
+        }
+        if (desk == Desk.Document && y >= 870 && y < 990)
+            return Glyph(bg, DocumentLine, x - 848, (y - 870) % 30, 0xFF202125u);
+        if (desk == Desk.Code && y >= 870 && y < 990)
+            return Glyph(bg, CodeLine, x - 838, (y - 870) % 24, 0xFF84BACBu);
+        return bg;
+    }
+
+    private static uint Glyph(uint bg, TextMask mask, int x, int y, uint ink)
+    {
+        if ((uint)x >= (uint)mask.Width || (uint)y >= (uint)mask.Height) return bg;
+        var a = mask.Coverage[y * mask.Width + x] / 255f;
+        var r = ((bg >> 16) & 255) * (1f - a) + ((ink >> 16) & 255) * a;
+        var g = ((bg >> 8) & 255) * (1f - a) + ((ink >> 8) & 255) * a;
+        var b = (bg & 255) * (1f - a) + (ink & 255) * a;
+        return Pack(r / 255f, g / 255f, b / 255f);
     }
 
     private static uint Pack(float r, float g, float b) =>
@@ -64,6 +92,7 @@ internal static class FakeDesktops
 
     private static (float, float, float) Document(int x, int y)
     {
+        if (x >= 820 && x < 1210 && y >= 870 && y < 990) return (0.98f, 0.98f, 0.97f);
         if (x < 400) return (0.90f, 0.91f, 0.93f);
         if (y < 780) return (0.97f, 0.97f, 0.98f);
         if (x >= 960 && x < 1100 && y >= 920 && y < 952) return (0.16f, 0.45f, 0.95f);   // a blue button
@@ -75,6 +104,7 @@ internal static class FakeDesktops
 
     private static (float, float, float) Code(int x, int y)
     {
+        if (x >= 820 && x < 1210 && y >= 870 && y < 990) return (0.118f, 0.118f, 0.118f);
         var row = y / 20;
         var local = y % 20;
         if (local < 5 || local >= 14 || x < 80) return (0.118f, 0.118f, 0.118f);

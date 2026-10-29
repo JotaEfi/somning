@@ -3,6 +3,20 @@ namespace Somning.Platform.Windows.Hook;
 internal struct ChordTracker
 {
     private bool leftCtrl, rightCtrl, genericCtrl, leftShift, rightShift, genericShift, owned;
+    /// <summary>
+    /// Re-synchronises the tracker with the physical keyboard after a hook reinstall (the unhooked gap can miss key events)
+    /// WITHOUT forgetting an in-progress chord: zeroing the tracker made a Space pressed right after a reinstall look like a
+    /// plain Space (no Ctrl+Shift known), so it leaked into the focused app. Returns true when the chord we owned ended
+    /// during the gap and a TriggerUp must be emitted so the interpreter does not wait for a release that was missed.
+    /// </summary>
+    public bool Resync(bool ctrlDown, bool shiftDown, bool spaceDown)
+    {
+        genericCtrl = ctrlDown; leftCtrl = rightCtrl = false;
+        genericShift = shiftDown; leftShift = rightShift = false;
+        if (owned && !spaceDown) { owned = false; return true; }
+        return false;
+    }
+
     public bool Process(uint key, bool down, out KeyEventKind kind)
     {
         kind = default;

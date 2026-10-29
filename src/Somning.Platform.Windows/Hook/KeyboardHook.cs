@@ -18,6 +18,7 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
     private int hookActive;
     private nint hookHandle;
     private int installCount;
+    private int reinstallCompletedCount;
     private readonly TaskCompletionSource ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Thread? thread;
     private uint threadId;
@@ -39,6 +40,9 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
 
     /// <summary>Test observability: number of successful hook installations, including reinstalls.</summary>
     public int InstallCount => Volatile.Read(ref installCount);
+
+    /// <summary>Number of reinstalls that COMPLETED successfully on the hook thread (requests are counted by the watchdog).</summary>
+    public int ReinstallCompletedCount => Volatile.Read(ref reinstallCompletedCount);
 
     /// <summary>Liveness observability: number of marker probe keystrokes the hook callback has swallowed.</summary>
     public int ProbeSeenCount => Volatile.Read(ref probeSeenCount);
@@ -93,11 +97,14 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
                     {
                         Volatile.Write(ref hookActive, 0);
                         DisposeHookTolerant(hook); // SafeHandle releases via UnhookWindowsHookEx on this thread.
-                        tracker = default;
                         hook = PInvoke.SetWindowsHookEx(WINDOWS_HOOK_ID.WH_KEYBOARD_LL, rootedCallback!, null, 0);
                         if (hook.IsInvalid) throw new InvalidOperationException("Unable to reinstall keyboard hook.");
                         hookHandle = hook.DangerousGetHandle();
+                        // Keep the chord state (do not zero it) but correct it against the physical keys: see ChordTracker.Resync.
+                        if (tracker.Resync(KeyDown(0x11), KeyDown(0x10), KeyDown(0x20)))
+                            sink.TryWrite(new KeyEvent(KeyEventKind.TriggerUp, Environment.TickCount64, false));
                         _ = Interlocked.Increment(ref installCount);
+                        _ = Interlocked.Increment(ref reinstallCompletedCount);
                         Volatile.Write(ref hookActive, 1);
                     }
                     else if ((uint)message.message == SilentRemovalMessage)
@@ -188,6 +195,9 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
         // advance to a third layout on machines with more than two installed layouts.
         _ = PostMessage(targetLayoutWindow, WmInputLangChangeRequest, 0, layoutBeforeChord);
     }
+
+    private static bool KeyDown(int virtualKey) => (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
+    [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int virtualKey);
 
     private const uint WmInputLangChangeRequest = 0x0050;
     [DllImport("user32.dll")] private static extern nint GetForegroundWindow();

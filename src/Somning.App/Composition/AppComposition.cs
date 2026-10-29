@@ -221,7 +221,8 @@ public sealed class AppComposition : IAsyncDisposable
         Runner.BeforeDeliver = deliveryBarrier.WaitIfArmedAsync;
         if (holdRecovery) RecoveryGate.Arm();
         var status = new HarnessStatusSource(() => Engine.Status.ToString(), () => Host.State,
-            () => Hook.InstallCount, () => Hook.ProbeSeenCount, () => hookWatchdog.ReinstallCount);
+            () => Hook.InstallCount, () => Hook.ProbeSeenCount, () => Hook.ReinstallCompletedCount,
+            () => hookWatchdog.ReinstallRequests);
         var controls = new HarnessControls(InjectTapAsync, enabled => AutoPasteEnabled = enabled);
         Pipe = new HarnessPipeServer(Journal, status, fixture, deliveryBarrier, RecoveryGate, requestShutdown, controls);
         Pipe.Start();

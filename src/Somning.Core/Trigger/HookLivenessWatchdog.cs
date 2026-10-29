@@ -20,7 +20,8 @@ public sealed class HookLivenessWatchdog(
     private int reinstallCount;
     private DateTimeOffset? lastReinstallAt;
 
-    public int ReinstallCount => Volatile.Read(ref reinstallCount);
+    /// <summary>Reinstall REQUESTS issued (the callback returned without throwing). Completed reinstalls are counted by the hook itself.</summary>
+    public int ReinstallRequests => Volatile.Read(ref reinstallCount);
 
     public async Task<LivenessAction> RunOnceAsync(CancellationToken cancellationToken = default)
     {

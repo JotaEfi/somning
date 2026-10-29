@@ -26,7 +26,7 @@ public sealed class HookWatchdogLivenessTests
         Assert.Equal(0, reinstalls);
         Assert.Equal(LivenessAction.Reinstall, await watchdog.RunOnceAsync(token)); // miss 2 -> reinstall
         Assert.Equal(1, reinstalls);
-        Assert.Equal(1, watchdog.ReinstallCount);
+        Assert.Equal(1, watchdog.ReinstallRequests);
     }
 
     [Fact]

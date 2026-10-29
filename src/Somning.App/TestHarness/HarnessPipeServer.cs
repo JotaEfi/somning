@@ -12,7 +12,8 @@ namespace Somning.App.TestHarness;
 
 /// <summary>Live values reported by the <c>status</c> command.</summary>
 public sealed record HarnessStatusSource(Func<string> Engine, Func<DictationState> State,
-    Func<int>? HookInstallCount = null, Func<int>? HookProbeSeen = null, Func<int>? WatchdogReinstalls = null);
+    Func<int>? HookInstallCount = null, Func<int>? HookProbeSeen = null, Func<int>? WatchdogReinstalls = null,
+    Func<int>? WatchdogReinstallRequests = null);
 
 /// <summary>Headless controls: a synthetic tap on the key channel and a live in-memory auto-paste switch.</summary>
 public sealed record HarnessControls(Func<Task> InjectTapAsync, Action<bool> SetAutoPaste);
@@ -185,6 +186,7 @@ public sealed class HarnessPipeServer : IAsyncDisposable
             ["hook_install_count"] = status.HookInstallCount?.Invoke() ?? 0,
             ["hook_probe_seen"] = status.HookProbeSeen?.Invoke() ?? 0,
             ["watchdog_reinstalls"] = status.WatchdogReinstalls?.Invoke() ?? 0,
+            ["watchdog_reinstall_requests"] = status.WatchdogReinstallRequests?.Invoke() ?? 0,
             ["pid"] = Environment.ProcessId
         };
     }

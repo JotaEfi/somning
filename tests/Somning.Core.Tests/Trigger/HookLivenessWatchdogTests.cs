@@ -31,7 +31,7 @@ public sealed class HookLivenessWatchdogTests
         Assert.Equal(0, count);
         Assert.Equal(LivenessAction.Reinstall, await watchdog.RunOnceAsync(TestContext.Current.CancellationToken));
         Assert.Equal(1, count);
-        Assert.Equal(1, watchdog.ReinstallCount);
+        Assert.Equal(1, watchdog.ReinstallRequests);
     }
 
     [Fact]
@@ -52,7 +52,7 @@ public sealed class HookLivenessWatchdogTests
         var watchdog = Create(new ScriptedProbe(ProbeOutcome.NotSeen), () => throw new InvalidOperationException("nope"), log);
         await watchdog.RunOnceAsync(TestContext.Current.CancellationToken);
         await watchdog.RunOnceAsync(TestContext.Current.CancellationToken);
-        Assert.Equal(0, watchdog.ReinstallCount);
+        Assert.Equal(0, watchdog.ReinstallRequests);
         Assert.Contains(log, l => l.Contains("reinstall callback failed"));
     }
 

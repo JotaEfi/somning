@@ -11,7 +11,7 @@ namespace Somning.Platform.Windows.Overlay;
 /// anti-aliased by distance coverage. Instances own scratch buffers, so rendering allocates nothing; use one
 /// instance per render thread.
 /// </summary>
-public sealed class DropRenderer
+public sealed partial class DropRenderer
 {
     private const float GlowRangeDip = 24f;
     private const float DefaultNativeDpiLimit = 1.25f;
@@ -52,16 +52,24 @@ public sealed class DropRenderer
     /// drawn at full resolution. <paramref name="backdrop"/> (window-pixel mapped) enables refraction/reflection of
     /// the desktop behind the drop with weight <paramref name="backdropMix"/>.
     /// </summary>
+    /// <remarks>
+    /// <paramref name="restCenterY"/> and <paramref name="edgeY"/> (window pixels, negative = default) place the resting
+    /// drop center and the bottom screen edge for the viscous entrance; by default the drop rests at the buffer center
+    /// and the edge lies <see cref="DropLayout.DefaultEdgeDistanceDip"/> below it.
+    /// </remarks>
     public void Render(Span<uint> pixels, int width, int height, float dpiScale, in DropFrame frame, TextMask? text = null,
-        float noticeHalfWidth = 0f, TextMask? caption = null, BackdropTexture? backdrop = null, float backdropMix = 0f)
+        float noticeHalfWidth = 0f, TextMask? caption = null, BackdropTexture? backdrop = null, float backdropMix = 0f,
+        float restCenterY = -1f, float edgeY = -1f)
     {
+        var rest = restCenterY >= 0f ? restCenterY : height / 2f;
+        var edge = edgeY >= 0f ? edgeY : rest + DropLayout.DefaultEdgeDistanceDip * dpiScale;
         pixels.Clear();
         if (frame.Mode == OverlayMode.Hidden || frame.Opacity <= 0.002f || frame.Scale <= 0.02f) return;
 
         var mix = backdrop is null ? 0f : Math.Clamp(backdropMix, 0f, 1f);
         if (dpiScale <= NativeDpiLimit)
         {
-            RenderGlass(pixels, width, height, dpiScale, in frame, noticeHalfWidth, backdrop, mix, 1f);
+            RenderGlass(pixels, width, height, dpiScale, in frame, noticeHalfWidth, backdrop, mix, 1f, rest, edge);
         }
         else
         {
@@ -71,14 +79,14 @@ public sealed class DropRenderer
             if (internalBuffer.Length < iw * ih) internalBuffer = new uint[iw * ih];
             var inner = internalBuffer.AsSpan(0, iw * ih);
             inner.Clear();
-            RenderGlass(inner, iw, ih, 1f, in frame, noticeHalfWidth * k, backdrop, mix, k);
+            RenderGlass(inner, iw, ih, 1f, in frame, noticeHalfWidth * k, backdrop, mix, k, rest * k, edge * k);
             Upscale(inner, iw, ih, pixels, width, height);
         }
 
         if (text is { Width: > 0 } && frame.Morph > 0.5f)
         {
             var textAlpha = FastMath.Smooth((frame.Morph - 0.55f) / 0.4f) * frame.Opacity;
-            CaptionPainter.DrawText(pixels, width, height, text, textAlpha, width / 2f, height / 2f);
+            CaptionPainter.DrawText(pixels, width, height, text, textAlpha, width / 2f, rest);
         }
 
         if (caption is { Width: > 0 } && frame.Mode == OverlayMode.Transcribing)
@@ -86,16 +94,16 @@ public sealed class DropRenderer
             var captionAlpha = FastMath.Smooth((frame.TranscribeMix - 0.1f) / 0.8f) * frame.Opacity;
             if (captionAlpha > 0.01f)
             {
-                var centerY = height / 2f + (DropLayout.OrbRadius + CaptionPainter.GapDip + CaptionPainter.HeightDip / 2f) * dpiScale;
+                var centerY = rest + (DropLayout.OrbRadius + CaptionPainter.GapDip + CaptionPainter.HeightDip / 2f) * dpiScale;
                 CaptionPainter.Draw(pixels, width, height, dpiScale, caption, captionAlpha, width / 2f, centerY, backdrop, mix);
             }
         }
     }
 
     private void RenderGlass(Span<uint> pixels, int width, int height, float dpiScale, in DropFrame frame, float noticeHalfWidth,
-        BackdropTexture? backdrop, float backdropMix, float pixelScale)
+        BackdropTexture? backdrop, float backdropMix, float pixelScale, float restCenterY, float edgeY)
     {
-        var scene = new Scene(frame, width, height, dpiScale, noticeHalfWidth, backdrop, backdropMix, pixelScale);
+        var scene = new Scene(frame, width, restCenterY, edgeY, dpiScale, noticeHalfWidth, backdrop, backdropMix, pixelScale);
         if (scene.NeutralMix < 0.999f)
         {
             DropPalette.Blend(colors, frame.TranscribeMix, frame.NoticeMix);
@@ -109,12 +117,25 @@ public sealed class DropRenderer
         var x1 = Math.Min(width - 1, (int)(scene.CenterX + reach));
         var y0 = Math.Max(0, (int)(scene.CenterY - reachY));
         var y1 = Math.Min(height - 1, (int)(scene.CenterY + reachY));
+        var goo = scene.Goo > 0f;
+        if (goo)
+        {
+            x0 = Math.Max(0, Math.Min(x0, (int)(scene.CenterX - scene.GooReach)));
+            x1 = Math.Min(width - 1, Math.Max(x1, (int)(scene.CenterX + scene.GooReach)));
+            y1 = Math.Min(height - 1, (int)MathF.Ceiling(scene.CenterY + scene.EdgeDy));
+        }
 
         // Glow and shadow are smooth, so pixels well outside the glass are shaded once per 2x2 block.
         for (var y = y0; y <= y1; y += 2)
         {
             for (var x = x0; x <= x1; x += 2)
             {
+                if (goo && InGooBox(in scene, x + 1f - scene.CenterX, y + 1f - scene.CenterY))
+                {
+                    ShadeGooBlock(pixels, width, height, in scene, x, y, frame.Opacity);
+                    continue;
+                }
+
                 var fullBlock = x + 1 < width && y + 1 < height;
                 if (fullBlock && TryOutside(in scene, x + 1f - scene.CenterX, y + 1f - scene.CenterY, out var outside))
                 {
@@ -574,11 +595,14 @@ public sealed class DropRenderer
         public readonly BackdropTexture? Tex;
         public readonly float BackdropMix, BackdropX0, BackdropY0, BackdropSx, BackdropSy, RefractReach, EnvReach;
 
-        public Scene(in DropFrame f, int width, int height, float dpi, float noticeHalfWidth,
+        public readonly float Goo, EdgeDy, AttachDy, TopEndDy, TopR0, TopR1, BotStartDy, BotR0, BotR1;
+        public readonly float PoolCy, InvPoolRx, InvPoolRy, PoolMin, GooK, GooLowK, GooReach;
+
+        public Scene(in DropFrame f, int width, float restCenterY, float edgeY, float dpi, float noticeHalfWidth,
             BackdropTexture? tex, float backdropMix, float pixelScale)
         {
             CenterX = width / 2f;
-            CenterY = height / 2f;
+            CenterY = edgeY + (restCenterY - edgeY) * f.Rise;
 
             // Volume-preserving squash/stretch: width x(1+e), height (and depth) x1/sqrt(1+e).
             var (widthFactor, heightFactor) = DropStretch.Scales(f.Elongation);
@@ -596,8 +620,9 @@ public sealed class DropRenderer
             InvHalfWidth = 1f / Math.Max(1f, HalfWidth);
             Lean = f.Lean;
 
-            var stretchX = 1f + f.Stretch;
-            var stretchY = 1f - f.Stretch;
+            // Entrance squash (positive = taller) on top of the voice squash/stretch, roughly volume preserving.
+            var stretchX = (1f + f.Stretch) / (1f + 0.5f * f.Squash);
+            var stretchY = (1f - f.Stretch) * (1f + f.Squash);
             InvRx = 1f / (capRx * stretchX);
             InvRy = 1f / (HalfHeight * stretchY);
             EdgeScale = Math.Min(capRx, HalfHeight) * Math.Min(stretchX, stretchY);
@@ -640,6 +665,33 @@ public sealed class DropRenderer
             InvContactRx = 1f / (HalfWidth * 0.86f);
             InvContactRy = 1f / (HalfHeight * 0.30f);
 
+            Goo = f.Goo;
+            EdgeDy = edgeY - CenterY;
+            AttachDy = TopEndDy = TopR0 = TopR1 = BotStartDy = BotR0 = BotR1 = 0f;
+            PoolCy = InvPoolRx = InvPoolRy = PoolMin = GooK = GooLowK = GooReach = 0f;
+            if (f.Goo > 0f)
+            {
+                var dropR = HalfHeight * stretchY;
+                AttachDy = dropR * 0.55f;
+                var pinch = AttachDy + Math.Max(0f, EdgeDy - AttachDy) * DropEmergence.PinchAt;
+                TopEndDy = AttachDy + (pinch - AttachDy) * f.TopTail;
+                TopR0 = dropR * 0.52f;
+                TopR1 = f.Neck * orbR;
+                BotStartDy = EdgeDy - (EdgeDy - pinch) * f.BottomTail;
+                BotR0 = orbR * Math.Min(0.5f, 0.75f * f.Pool);
+                BotR1 = f.Neck * orbR;
+                var poolRx = Math.Max(0.5f, orbR * 1.15f * f.Pool);
+                var poolRy = Math.Max(0.5f, orbR * 0.62f * f.Pool);
+                PoolCy = EdgeDy + poolRy * 0.25f;
+                InvPoolRx = f.Pool > 0.01f ? 1f / poolRx : 0f;
+                InvPoolRy = 1f / poolRy;
+                PoolMin = Math.Min(poolRx, poolRy);
+                GooK = orbR * 0.42f;
+                // A vanishing mound must not leave a smooth-min bead behind.
+                GooLowK = Math.Max(0.5f, GooK * Math.Min(1f, f.Pool / 0.3f));
+                GooReach = Math.Max(Math.Max(poolRx, TopR0), HalfWidth) + GlowRangeDip * dpi + GooK;
+            }
+
             Tex = tex;
             BackdropMix = tex is null ? 0f : backdropMix;
             RefractReach = HalfHeight * 1.05f;
@@ -668,6 +720,11 @@ public sealed class DropRenderer
                 ShadowAlpha = Math.Min(0.30f, 0.14f * strength) * backdropMix + 0.20f * (1f - backdropMix);
                 ContactAlpha = Math.Min(0.55f, 0.30f * strength) * backdropMix + 0.20f * (1f - backdropMix);
             }
+
+            // The ground shadow belongs to the floating drop: it fades in as the drop leaves the screen edge.
+            var grounded = FastMath.Smooth(f.Rise) * (1f - f.Goo);
+            ShadowAlpha *= grounded;
+            ContactAlpha *= grounded;
         }
     }
 }

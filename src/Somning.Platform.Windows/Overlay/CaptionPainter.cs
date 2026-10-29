@@ -5,9 +5,9 @@ namespace Somning.Platform.Windows.Overlay;
 /// <summary>Translucent, lightly beveled caption glyphs, with a short upward entrance. No plate or dots.</summary>
 internal static class CaptionPainter
 {
-    public const float HeightDip = 30f;
-    public const float GapDip = 10f;
-    private const float SlideDip = 6f;
+    public const float HeightDip = 21f;
+    public const float GapDip = 7f;
+    private const float SlideDip = 4.2f;
 
     public static void Draw(Span<uint> pixels, int width, int height, float dpi, TextMask text, float alpha,
         float centerX, float centerY, BackdropTexture? backdrop, float backdropMix)

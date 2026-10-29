@@ -85,6 +85,32 @@ public sealed class OverlayAnimatedRenderTests
     }
 
     [Fact]
+    public void Entrance_draws_a_filament_from_the_screen_edge_then_floats_free()
+    {
+        var (w, baseH) = DropLayout.WindowSize(1f, false, 0f);
+        const int reach = 60;
+        var h = baseH + reach;
+        var renderer = new DropRenderer();
+        var animator = new OverlayAnimator();
+        animator.Show(OverlayMode.Listening);
+        var buffer = new uint[w * h];
+
+        int EdgeAlpha() => Enumerable.Range(w / 2 - 10, 20).Max(x => (int)(buffer[(h - 2) * w + x] >> 24));
+        int NeckRow(int y) => Enumerable.Range(0, w).Count(x => (buffer[y * w + x] >> 24) > 100);
+
+        for (var t = 0f; t < 0.25f; t += Frame) animator.Tick(Frame);
+        Assert.True(animator.Frame.IsEmerging);
+        renderer.Render(buffer, w, h, 1f, animator.Frame, restCenterY: baseH / 2f, edgeY: h);
+        Assert.True(EdgeAlpha() > 40, $"goo attached to the screen edge, alpha {EdgeAlpha()}");
+        Assert.All(buffer, p => Assert.True(((p >> 16) & 0xFF) <= p >> 24));
+
+        for (var t = 0f; t < 1f; t += Frame) animator.Tick(Frame);
+        renderer.Render(buffer, w, h, 1f, animator.Frame, restCenterY: baseH / 2f, edgeY: h);
+        Assert.True(EdgeAlpha() < 10, "detached after the pinch-off");
+        Assert.True(NeckRow(baseH / 2) > 60, "drop at its resting place");
+    }
+
+    [Fact]
     public void Zero_opacity_draws_nothing()
     {
         var frame = Settled(OverlayMode.Listening, 1f) with { Opacity = 0f };

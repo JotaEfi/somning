@@ -28,7 +28,7 @@ internal static class Scenarios
         public float Clock;
         public OverlayMode Mode = OverlayMode.Hidden;
         public OverlayNoticeKind? NoticeKind;
-        public int WindowX, WindowY;
+        public int WindowX, WindowY, Reach;
 
         public Run(Desk desk, float dpi, bool useBackdrop = true)
         {
@@ -41,8 +41,10 @@ internal static class Scenarios
             var text = NoticeKind is { } kind ? TextMask.Create(OverlayText.For(kind), (int)Math.Round(15 * Dpi)) : TextMask.Empty;
             var (w, h) = DropLayout.WindowSize(Dpi, Animator.Frame.Morph > 0.01f, text.Width);
             WindowX = (int)(960 * Dpi) - w / 2;
+            // Entrance: the window reaches down to the bottom screen edge, as in OverlayWindowManager.
+            Reach = Animator.Frame.IsEmerging ? (int)((FakeDesktops.ScreenHeight - FakeDesktops.WorkBottom + 14) * Dpi) : 0;
             WindowY = (int)((FakeDesktops.WorkBottom - 14) * Dpi) - h;
-            return (text, w, h);
+            return (text, w, h + Reach);
         }
 
         public void Show(OverlayMode mode, OverlayNoticeKind? notice = null)
@@ -88,6 +90,14 @@ internal static class Scenarios
             Timeline(dir, desk);
         }
 
+        foreach (var desk in new[] { Desk.Wallpaper, Desk.Document, Desk.Code, Desk.Clock })
+        {
+            Entrance(dir, desk, 1f);
+        }
+
+        Entrance(dir, Desk.Document, 2f);
+        Caption(dir);
+
         // Hi-DPI check and the reflection toggled off, for comparison.
         foreach (var desk in new[] { Desk.Wallpaper, Desk.Document, Desk.Clock, Desk.Code })
         {
@@ -128,13 +138,20 @@ internal static class Scenarios
         return r;
     }
 
-    private static (int W, int H, byte[] Rgb) Compose(Run run, Desk desk)
+    private static (int W, int H, byte[] Rgb) Compose(Run run, Desk desk, bool forceReach = false)
     {
         var (text, w, h) = run.Layout();
+        if (forceReach && run.Reach == 0)
+        {
+            run.Reach = (int)((FakeDesktops.ScreenHeight - FakeDesktops.WorkBottom + 14) * run.Dpi);
+            h += run.Reach;
+        }
         var pixels = new uint[w * h];
         var caption = run.Mode == OverlayMode.Transcribing ? DropLayout.CreateCaption(OverlayText.Transcribing, run.Dpi) : TextMask.Empty;
         var renderer = new DropRenderer();
-        renderer.Render(pixels, w, h, run.Dpi, run.Animator.Frame, text, DropLayout.NoticeHalfWidth(text.Width, run.Dpi), caption, run.Cache.Texture, run.Cache.Availability);
+        var restCenterY = (h - run.Reach) / 2f;
+        renderer.Render(pixels, w, h, run.Dpi, run.Animator.Frame, text, DropLayout.NoticeHalfWidth(text.Width, run.Dpi), caption, run.Cache.Texture, run.Cache.Availability,
+            restCenterY, run.Reach > 0 ? h : -1f);
 
         var rgb = new byte[w * h * 3];
         for (var y = 0; y < h; y++)
@@ -157,6 +174,32 @@ internal static class Scenarios
     // Premultiplied source over opaque backdrop.
     private static byte Blend(uint premultiplied, uint backdrop, float alpha) =>
         (byte)Math.Clamp(premultiplied + backdrop * (1f - alpha) + 0.5f, 0f, 255f);
+
+    /// <summary>The viscous entrance every 50 ms, always drawn with the full reach down to the screen edge.</summary>
+    private static void Entrance(string dir, Desk desk, float dpi)
+    {
+        var run = new Run(desk, dpi);
+        run.Show(OverlayMode.Listening);
+        var frames = new List<(int W, int H, byte[] Rgb)>();
+        for (var i = 0; i <= 15; i++)
+        {
+            frames.Add(Compose(run, desk, forceReach: true));
+            run.Advance(0.05f);
+        }
+
+        var suffix = dpi > 1f ? $"-{dpi:0}x" : string.Empty;
+        Sheet(Path.Combine(dir, $"entrance-{desk.ToString().ToLowerInvariant()}{suffix}.png"), frames, 8);
+    }
+
+    private static void Caption(string dir)
+    {
+        foreach (var desk in new[] { Desk.Wallpaper, Desk.Document })
+        {
+            var run = States()[5].Build(desk, 2f, true);
+            var f = Compose(run, desk);
+            PngWriter.WriteRgb(Path.Combine(dir, $"caption-{desk.ToString().ToLowerInvariant()}-2x.png"), f.W, f.H, f.Rgb);
+        }
+    }
 
     private static void Timeline(string dir, Desk desk)
     {

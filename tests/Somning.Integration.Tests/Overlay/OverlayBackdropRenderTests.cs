@@ -188,7 +188,7 @@ public sealed class OverlayBackdropRenderTests
         var white = Solid(w, h, 1f, 1f, 1f);
         var buffer = Render(frame, white, 1f, caption, dpi);
         var plain = Render(frame, white, 1f, null, dpi);
-        var cy = h / 2f + (DropLayout.OrbRadius + 10f + 15f) * dpi;
+        var cy = h / 2f + (DropLayout.OrbRadius + 7f + 10.5f) * dpi;   // caption gap 7 + half height 10.5 dip (70% scale)
         var left = (int)MathF.Round(w / 2f - caption.Width / 2f);
         var top = (int)MathF.Round(cy - caption.Height / 2f);
         var bevel = Math.Max(1, (int)MathF.Round(dpi));

@@ -330,10 +330,17 @@ public sealed class OverlayWindowManager : IOverlayView
 
         var frame = animator.Frame;
         var (width, height) = DropLayout.WindowSize(dpiScale, frame.Morph > 0.01f, textMask.Width);
+        // During the viscous entrance the window reaches down to the bottom edge of the monitor, where the goo comes
+        // from; the surface is resized only when the entrance starts and ends, never per frame.
+        var restCenterY = height / 2f;
+        var monitorBottom = monitorBounds.Top + monitorBounds.Height;
+        var reach = frame.IsEmerging ? Math.Max(0, monitorBottom - anchorBottom) : 0;
+        height += reach;
+        var edgeY = reach > 0 ? (float)height : -1f;
         layoutWidth = width;
         layoutHeight = height;
         layoutX = anchorCenterX - width / 2;
-        layoutY = anchorBottom - height;
+        layoutY = anchorBottom + reach - height;
 
         backdrop.Configure(layoutX, layoutY, layoutWidth, layoutHeight, dpiScale, monitorBounds);
         backdrop.Advance(lastDt);
@@ -348,7 +355,7 @@ public sealed class OverlayWindowManager : IOverlayView
             unsafe
             {
                 var pixels = new Span<uint>((void*)surfaceBits, layoutWidth * layoutHeight);
-                renderer.Render(pixels, layoutWidth, layoutHeight, dpiScale, in frame, textMask, noticeHalfWidth, captionMask, backdrop.Texture, backdrop.Availability);
+                renderer.Render(pixels, layoutWidth, layoutHeight, dpiScale, in frame, textMask, noticeHalfWidth, captionMask, backdrop.Texture, backdrop.Availability, restCenterY, edgeY);
             }
 
             var ptSrc = new POINT { X = 0, Y = 0 };

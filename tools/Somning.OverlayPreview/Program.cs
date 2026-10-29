@@ -23,6 +23,7 @@ namespace Somning.OverlayPreview
         public static void Run(string which)
         {
             if (which is "quick") { Console.WriteLine(Measure(OverlayMode.Listening, 0f, 1f, true).Ms); Console.WriteLine(Measure(OverlayMode.Listening, 0.18f, 1f, true).Ms); return; }
+            if (which is "all" or "entrance") MeasureEntrance();
             if (which is "all" or "render") RunRender();
             if (which is "all" or "capture") MeasureCapture();
         }
@@ -46,6 +47,36 @@ namespace Somning.OverlayPreview
                 }
             }
 
+        }
+
+        // Viscous entrance: tall window down to the screen edge, goo field shaded per pixel, ~0.64 s per run.
+        private static void MeasureEntrance()
+        {
+            foreach (var dpi in new[] { 1f, 1.5f, 2f })
+            {
+                var (w, baseH) = DropLayout.WindowSize(dpi, false, 0f);
+                var h = baseH + (int)(54 * dpi);
+                var buffer = new uint[w * h];
+                var renderer = new DropRenderer();
+                double worst = 0, total = 0;
+                var frames = 0;
+                for (var rep = 0; rep < 20; rep++)
+                {
+                    var animator = new OverlayAnimator();
+                    animator.Show(OverlayMode.Listening);
+                    while (true)
+                    {
+                        animator.Tick(1f / 60f);
+                        if (!animator.Frame.IsEmerging) break;
+                        var sw = Stopwatch.StartNew();
+                        renderer.Render(buffer, w, h, dpi, animator.Frame, restCenterY: baseH / 2f, edgeY: h);
+                        var ms = sw.Elapsed.TotalMilliseconds;
+                        if (rep > 2) { total += ms; worst = Math.Max(worst, ms); frames++; }
+                    }
+                }
+
+                Console.WriteLine($"{dpi * 100,4:F0}% entrance {w}x{h}: mean {total / frames:F3} ms ({total / frames / 16.667 * 100:F1}% of a core), worst {worst:F3} ms");
+            }
         }
 
         // Real GDI screen capture + reduction, as the overlay does it at 15 fps.

@@ -11,7 +11,9 @@ public static class DropLayout
     public const float NoticeHalfHeight = 29f;
     public const float NoticeTextPadding = 30f;
     public const float NoticeWindowMargin = 26f;
-    private const float CaptionFontDip = 18f;
+    /// <summary>Distance from the resting drop center down to the bottom screen edge when the real one is unknown.</summary>
+    public const float DefaultEdgeDistanceDip = 158f;
+    private const float CaptionFontDip = 12.6f;   // 70% of the original 18 dip caption
 
     /// <summary>Half width of the notice capsule for a text mask of the given pixel width.</summary>
     public static float NoticeHalfWidth(float textWidthPx, float dpiScale) =>
@@ -30,5 +32,5 @@ public static class DropLayout
     /// <summary>Caption text mask for the floating transcribing label, without trailing dots.</summary>
     public static TextMask CreateCaption(string? text, float dpiScale) =>
         TextMask.Create(CaptionText.WithoutTrailingDots(text), (int)MathF.Round(CaptionFontDip * dpiScale), 350,
-            (int)MathF.Round(0.4f * dpiScale), true);
+            (int)MathF.Round(0.28f * dpiScale), true);
 }

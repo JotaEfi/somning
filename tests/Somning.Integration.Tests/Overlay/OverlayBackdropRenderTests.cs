@@ -83,36 +83,81 @@ public sealed class OverlayBackdropRenderTests
     }
 
     [Fact]
-    public void A_red_backdrop_tints_the_glass_and_the_shadow_red()
+    public void Listening_glass_stays_grayscale_even_over_colored_desktops()
     {
         var frame = Settled(OverlayMode.Listening, 2f, 0.12f);
         var (w, h) = DropLayout.WindowSize(1f, false, 0f);
-        var plain = Render(frame, null, 0f);
-        var red = Render(frame, Solid(w, h, 1f, 0.05f, 0.05f), 1f);
-        var blue = Render(frame, Solid(w, h, 0.05f, 0.1f, 1f), 1f);
-
-        static (double R, double B) Mean(uint[] b, int w, int h)
+        foreach (var backdrop in new[] { Solid(w, h, 1f, 0.05f, 0.05f), Solid(w, h, 0.05f, 0.1f, 1f) })
         {
-            double r = 0, bl = 0, n = 0;
-            for (var y = h / 2 - 30; y < h / 2 + 30; y++)
-                for (var x = w / 2 - 50; x < w / 2 + 50; x++)
-                {
-                    var p = b[y * w + x];
-                    var a = p >> 24;
-                    if (a == 0) continue;
-                    r += ((p >> 16) & 0xFF) / (double)a;
-                    bl += (p & 0xFF) / (double)a;
-                    n++;
-                }
-
-            return (r / n, bl / n);
+            foreach (var p in Render(frame, backdrop, 1f))
+            {
+                Assert.Equal((p >> 16) & 255, (p >> 8) & 255);
+                Assert.Equal((p >> 16) & 255, p & 255);
+            }
         }
+    }
 
-        var (pr, pb) = Mean(plain, w, h);
-        var (rr, rb) = Mean(red, w, h);
-        var (br, bb) = Mean(blue, w, h);
-        Assert.True(rr - rb > pr - pb + 0.05, $"red backdrop should push red over blue: plain {pr - pb:F3}, red {rr - rb:F3}");
-        Assert.True(bb - br > pb - pr + 0.05, $"blue backdrop should push blue over red: plain {pb - pr:F3}, blue {bb - br:F3}");
+    [Fact]
+    public void Long_utterance_keeps_wave_motion_continuous_across_the_ripple_clock_wrap()
+    {
+        var animator = new OverlayAnimator();
+        animator.Show(OverlayMode.Listening);
+        var (w, h) = DropLayout.WindowSize(1f, false, 0f);
+        var wraps = 0;
+        for (var i = 0; i < 60 * 20; i++)
+        {
+            var previous = animator.Frame;
+            animator.SetLevel(0.12f);
+            animator.Tick(Step);
+            var current = animator.Frame;
+            if (current.RipplePhase >= previous.RipplePhase) continue;
+            wraps++;
+            var before = Render(previous, null, 0f);
+            var after = Render(current, null, 0f);
+            var delta = 0f;
+            var samples = 0;
+            for (var y = h / 2 - 18; y < h / 2 + 18; y++)
+                for (var x = w / 2 - 38; x < w / 2 + 38; x++)
+                {
+                    var p = y * w + x;
+                    delta += Math.Abs((int)((before[p] >> 16) & 255) - (int)((after[p] >> 16) & 255));
+                    samples++;
+                }
+            Assert.True(delta / samples < 4f, $"wave jumped by {delta / samples:F2} gray levels per pixel at wrap");
+        }
+        Assert.True(wraps >= 2, "exercise multiple wraps during a 20-second utterance");
+    }
+
+    [Fact]
+    public void Lens_preserves_detail_and_folds_the_image_near_the_rim()
+    {
+        var frame = DropFrame.Static(OverlayMode.Listening);
+        var (w, h) = DropLayout.WindowSize(1f, false, 0f);
+        var gradient = new BackdropTexture(w, h);
+        var inverse = new BackdropTexture(w, h);
+        for (var y = 0; y < h; y++)
+            for (var x = 0; x < w; x++)
+                for (var c = 0; c < 3; c++)
+                {
+                    var value = Math.Clamp(0.5f + (x - w / 2f) / 80f, 0f, 1f);
+                    gradient.Data[(y * w + x) * 3 + c] = value;
+                    inverse.Data[(y * w + x) * 3 + c] = 1f - value;
+                }
+        var forward = Render(frame, gradient, 1f);
+        var backward = Render(frame, inverse, 1f);
+        var white = Render(frame, Solid(w, h, 1f, 1f, 1f), 1f);
+        var black = Render(frame, Solid(w, h, 0f, 0f, 0f), 1f);
+        // Opposite ramps cancel additive lighting. White/black normalization cancels transmission
+        // changes from the dark band and rim. Sample before the outer reflected highlight begins.
+        float Difference(int dx)
+        {
+            var i = (h / 2 - 10) * w + w / 2 + dx;
+            static float Red(uint p) => (p >> 16) & 255;
+            return (Red(forward[i]) - Red(backward[i])) / Math.Max(1f, Red(white[i]) - Red(black[i]));
+        }
+        Assert.True(Difference(28) > Difference(8) + 0.1f, "center retains the gradient direction");
+        Assert.True(Difference(28) > Difference(32) + 0.025f,
+            $"outer lens reverses local image: 8={Difference(8)}, 28={Difference(28)}, 32={Difference(32)}");
     }
 
     [Fact]
@@ -130,42 +175,49 @@ public sealed class OverlayBackdropRenderTests
         }
     }
 
-    [Fact]
-    public void Caption_is_a_translucent_frosted_pill_that_stays_legible_on_a_white_desktop()
+    [Theory]
+    [InlineData(1f)]
+    [InlineData(2f)]
+    [InlineData(3f)]
+    public void Caption_draws_only_translucent_glyphs_with_no_plate_or_dots(float dpi)
     {
         var frame = Settled(OverlayMode.Transcribing, 1.5f);
-        var caption = DropLayout.CreateCaption(OverlayText.Transcribing, 1f);
+        var caption = DropLayout.CreateCaption(OverlayText.Transcribing, dpi);
         Assert.True(caption.Width > 40);
-        var (w, h) = DropLayout.WindowSize(1f, false, 0f);
+        var (w, h) = DropLayout.WindowSize(dpi, false, 0f);
         var white = Solid(w, h, 1f, 1f, 1f);
-        var buffer = Render(frame, white, 1f, caption);
-        var plain = Render(frame, white, 1f, null);
-        Assert.NotEqual(plain, buffer);
-
-        // Panel sample inside the left end of the pill, clear of the text.
-        var pillY = (int)(h / 2f + DropLayout.OrbRadius + 14f + 15f);
-        var pillLeft = (int)(w / 2f - ((caption.Width + 5f + 17.6f) / 2f + 17f) + 9f);
-        var p = buffer[pillY * w + pillLeft];
-        var a = (p >> 24) / 255f;
-        Assert.InRange(a, 0.5f, 0.95f);                              // translucent glass, not solid
-        var lum = (0.2126f * ((p >> 16) & 0xFF) + 0.7152f * ((p >> 8) & 0xFF) + 0.0722f * (p & 0xFF)) / 255f / a;
-        Assert.True(lum < 0.55f, $"white text needs a darkened frost, got luminance {lum:F2}");
-
-        // The same pill over a red desktop is red-tinted: the frost really samples what is behind it.
-        var redPill = Render(frame, Solid(w, h, 0.9f, 0.1f, 0.1f), 1f, caption)[pillY * w + pillLeft];
-        Assert.True(((redPill >> 16) & 0xFF) > (redPill & 0xFF) * 1.5f);
+        var buffer = Render(frame, white, 1f, caption, dpi);
+        var plain = Render(frame, white, 1f, null, dpi);
+        var cy = h / 2f + (DropLayout.OrbRadius + 10f + 15f) * dpi;
+        var left = (int)MathF.Round(w / 2f - caption.Width / 2f);
+        var top = (int)MathF.Round(cy - caption.Height / 2f);
+        var bevel = Math.Max(1, (int)MathF.Round(dpi));
+        var changed = 0;
+        for (var y = top - 3; y < h; y++)
+            for (var x = 0; x < w; x++)
+            {
+                var i = y * w + x;
+                if (plain[i] == buffer[i]) continue;
+                changed++;
+                var tx = x - left;
+                var ty = y - top;
+                bool Covered(int yy) => tx >= 0 && tx < caption.Width && yy >= 0 && yy < caption.Height && caption.Coverage[yy * caption.Width + tx] > 0;
+                Assert.True(Covered(ty) || Covered(ty - bevel), "no painted panel, padding or dots outside glyph coverage");
+                Assert.InRange(buffer[i] >> 24, 1u, 235u);
+            }
+        Assert.True(changed > 100);
     }
 
     [Fact]
-    public void Caption_fades_in_with_the_transcribing_state_and_not_while_listening()
+    public void Caption_fades_in_with_transcribing_and_fades_out_with_the_drop()
     {
         var caption = DropLayout.CreateCaption(OverlayText.Transcribing, 1f);
-        var listening = Render(Settled(OverlayMode.Listening, 1.5f), null, 0f, caption);
-        var transcribing = Render(Settled(OverlayMode.Transcribing, 1.5f), null, 0f, caption);
-        var (w, h) = DropLayout.WindowSize(1f, false, 0f);
-        var pillY = (int)(h / 2f + DropLayout.OrbRadius + 29f);
-        Assert.True((listening[pillY * w + w / 2] >> 24) < 12);
-        Assert.True((transcribing[pillY * w + w / 2 - caption.Width / 2 - 8] >> 24) > 100);
+        var listening = Settled(OverlayMode.Listening, 1.5f);
+        Assert.Equal(Render(listening, null, 0f), Render(listening, null, 0f, caption));
+        var frame = Settled(OverlayMode.Transcribing, 1.5f);
+        Assert.NotEqual(Render(frame, null, 0f), Render(frame, null, 0f, caption));
+        var hidden = frame with { Opacity = 0f };
+        Assert.All(Render(hidden, null, 0f, caption), p => Assert.Equal(0u, p));
     }
 
     [Fact]

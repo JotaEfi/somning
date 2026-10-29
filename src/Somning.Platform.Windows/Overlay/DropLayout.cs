@@ -7,11 +7,11 @@ public static class DropLayout
 {
     public const float OrbRadius = 44f;
     public const float OrbWindowWidth = 248f;    // room for the voice-stretched pill plus glow
-    public const float OrbWindowHeight = 208f;   // room for the contact shadow and the caption pill below
+    public const float OrbWindowHeight = 208f;   // room for the contact shadow and the caption below
     public const float NoticeHalfHeight = 29f;
     public const float NoticeTextPadding = 30f;
     public const float NoticeWindowMargin = 26f;
-    private const float CaptionFontDip = 14f;
+    private const float CaptionFontDip = 18f;
 
     /// <summary>Half width of the notice capsule for a text mask of the given pixel width.</summary>
     public static float NoticeHalfWidth(float textWidthPx, float dpiScale) =>
@@ -27,8 +27,8 @@ public static class DropLayout
         return (Math.Max(width, wide), height);
     }
 
-    /// <summary>Caption text mask for the transcribing pill (label without trailing dots, which are animated).</summary>
+    /// <summary>Caption text mask for the floating transcribing label, without trailing dots.</summary>
     public static TextMask CreateCaption(string? text, float dpiScale) =>
-        TextMask.Create(CaptionText.WithoutTrailingDots(text), (int)MathF.Round(CaptionFontDip * dpiScale), 600,
-            Math.Max(1, (int)MathF.Round(0.6f * dpiScale)), true);
+        TextMask.Create(CaptionText.WithoutTrailingDots(text), (int)MathF.Round(CaptionFontDip * dpiScale), 350,
+            (int)MathF.Round(0.4f * dpiScale), true);
 }

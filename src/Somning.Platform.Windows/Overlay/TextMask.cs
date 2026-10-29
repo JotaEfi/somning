@@ -21,7 +21,7 @@ public sealed class TextMask
 
     public static TextMask Empty { get; } = new([], 0, 0);
 
-    /// <summary>Rasterizes one line; <paramref name="preferVariableFont"/> tries Segoe UI Variable Text first and falls back to Segoe UI.</summary>
+    /// <summary>Rasterizes one line; <paramref name="preferVariableFont"/> tries Segoe UI Variable Display first and falls back to Segoe UI.</summary>
     public static TextMask Create(string text, int fontPixels, int weight = 600, int letterSpacing = 0, bool preferVariableFont = false)
     {
         if (string.IsNullOrEmpty(text) || fontPixels <= 0) return Empty;
@@ -80,7 +80,7 @@ public sealed class TextMask
     {
         if (preferVariable)
         {
-            var variable = CreateFontW(-fontPixels, 0, 0, 0, weight, 0, 0, 0, 1, 0, 0, 4 /* ANTIALIASED_QUALITY */, 0, "Segoe UI Variable Text");
+            var variable = CreateFontW(-fontPixels, 0, 0, 0, weight, 0, 0, 0, 1, 0, 0, 4 /* ANTIALIASED_QUALITY */, 0, "Segoe UI Variable Display");
             var previous = SelectObject(dc, variable);
             var face = new System.Text.StringBuilder(64);
             _ = GetTextFaceW(dc, face.Capacity, face);

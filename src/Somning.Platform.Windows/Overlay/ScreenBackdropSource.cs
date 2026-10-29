@@ -6,7 +6,7 @@ namespace Somning.Platform.Windows.Overlay;
 /// <summary>
 /// Captures the desktop behind the overlay with a plain GDI BitBlt from the screen DC (no CAPTUREBLT, so layered
 /// windows such as the overlay itself are not included; the overlay is also excluded through
-/// WDA_EXCLUDEFROMCAPTURE) into one reusable DIB, reduces it to a small blurred texture and wipes the DIB at
+/// WDA_EXCLUDEFROMCAPTURE) into one reusable DIB, reduces it to a small detail-preserving texture and wipes the DIB at
 /// once. Nothing is saved, logged or sent anywhere; only the reduced texture survives the call.
 /// </summary>
 public sealed class ScreenBackdropSource : IBackdropSource

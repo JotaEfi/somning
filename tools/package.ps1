@@ -1,83 +1,83 @@
-﻿param(
-    [string]$Configuration = 'Release',
+param(
+    [ValidateSet('Release','Debug')][string]$Configuration = 'Release',
     [string]$OutputDir,
     [switch]$WithHarness
 )
-
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-
 $root = Split-Path $PSScriptRoot -Parent
+$publishRoot = [IO.Path]::GetFullPath((Join-Path $root 'publish')).TrimEnd([char]92)
 if (-not $OutputDir) {
     $leaf = if ($WithHarness) { 'package-harness' } else { 'package' }
-    $OutputDir = Join-Path $root "publish\$leaf"
+    $OutputDir = Join-Path $publishRoot $leaf
 }
-$harnessArgs = @()
-if ($WithHarness) {
-    $harnessArgs = @('-p:SomningHarness=true')
-    Write-Host "WARNING: harness package exposes the somning-test pipe. FOR TEST USE ONLY - never install or distribute it." -ForegroundColor Red
+$output = [IO.Path]::GetFullPath($OutputDir).TrimEnd([char]92)
+if (-not $output.StartsWith($publishRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'OutputDir must be a child of this checkout publish directory; refusing recursive cleanup elsewhere.'
 }
-$output = [System.IO.Path]::GetFullPath($OutputDir)
+$ancestor = $output
+while ($ancestor -and $ancestor.Length -ge $publishRoot.Length) {
+    if (Test-Path -LiteralPath $ancestor) {
+        if ((Get-Item -LiteralPath $ancestor -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw "Refusing reparse point in package output: $ancestor"
+        }
+    }
+    $ancestor = Split-Path $ancestor -Parent
+}
+if ($Configuration -ne 'Release' -and -not $WithHarness) { throw 'Distribution packages require Release configuration.' }
+if ($WithHarness) { Write-Warning 'TEST ONLY: this package exposes the test harness; do not distribute.' }
+$harnessValue = if ($WithHarness) { 'true' } else { 'false' }
 $engineOutput = Join-Path $output 'engine'
-
-Write-Host "=== Packaging Somning ($Configuration) ===" -ForegroundColor Cyan
-Write-Host "Target output: $output"
-
-if (Test-Path -LiteralPath $output) {
-    Write-Host "Cleaning existing package directory..."
-    Remove-Item -LiteralPath $output -Recurse -Force
-}
-
+[xml]$props = Get-Content -LiteralPath (Join-Path $root 'Directory.Build.props') -Raw
+$version = [string]$props.Project.PropertyGroup.Version
+if (-not $version) { throw 'Version is missing from Directory.Build.props.' }
+Write-Host "Packaging Somning $version ($Configuration), output: $output"
+if (Test-Path -LiteralPath $output) { Remove-Item -LiteralPath $output -Recurse -Force }
 New-Item -ItemType Directory -Path $output,$engineOutput -Force | Out-Null
-
 Push-Location $root
 try {
-    Write-Host "`n[1/4] Publishing Somning.App (win-x64 self-contained)..." -ForegroundColor Yellow
-    & dotnet publish src/Somning.App -c $Configuration -r win-x64 --self-contained -o $output $harnessArgs --nologo
-    if ($LASTEXITCODE -ne 0) { throw "Somning.App publish failed with exit code $LASTEXITCODE" }
-
-    Write-Host "`n[2/4] Publishing Somning.Engine (win-x64 self-contained)..." -ForegroundColor Yellow
-    & dotnet publish src/Somning.Engine -c $Configuration -r win-x64 --self-contained -o $engineOutput $harnessArgs --nologo
-    if ($LASTEXITCODE -ne 0) { throw "Somning.Engine publish failed with exit code $LASTEXITCODE" }
-} finally {
-    Pop-Location
+    & dotnet publish src/Somning.App -c $Configuration -r win-x64 --self-contained -o $output "-p:SomningHarness=$harnessValue" -p:PublishSingleFile=false --nologo
+    if ($LASTEXITCODE -ne 0) { throw "App publish failed: $LASTEXITCODE" }
+    & dotnet publish src/Somning.Engine -c $Configuration -r win-x64 --self-contained -o $engineOutput "-p:SomningHarness=$harnessValue" -p:PublishSingleFile=false --nologo
+    if ($LASTEXITCODE -ne 0) { throw "Engine publish failed: $LASTEXITCODE" }
+} finally { Pop-Location }
+foreach ($script in 'install.ps1','uninstall.ps1','fetch-models.ps1') {
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot $script) -Destination $output -Force
 }
-
-Write-Host "`n[3/4] Copying deployment and management scripts..." -ForegroundColor Yellow
-$installScriptSource = Join-Path $PSScriptRoot 'install.ps1'
-$uninstallScriptSource = Join-Path $PSScriptRoot 'uninstall.ps1'
-
-if (Test-Path -LiteralPath $installScriptSource) {
-    Copy-Item -LiteralPath $installScriptSource -Destination (Join-Path $output 'install.ps1') -Force
+foreach ($doc in 'README.md','CHANGELOG.md','THIRD-PARTY-NOTICES.md') {
+    $path = Join-Path $root $doc
+    if (Test-Path -LiteralPath $path) { Copy-Item -LiteralPath $path -Destination $output -Force }
 }
-if (Test-Path -LiteralPath $uninstallScriptSource) {
-    Copy-Item -LiteralPath $uninstallScriptSource -Destination (Join-Path $output 'uninstall.ps1') -Force
+$docsOutput = Join-Path $output 'docs'
+New-Item -ItemType Directory -Path $docsOutput -Force | Out-Null
+foreach ($doc in 'PRIVACIDADE.md','INSTALACAO.md','RELEASE-1.0.md') {
+    $path = Join-Path $root "docs\$doc"
+    if (Test-Path -LiteralPath $path) { Copy-Item -LiteralPath $path -Destination $docsOutput -Force }
 }
-
-# Verify key binary outputs
+@'
+@echo off
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1" -LaunchAfterInstall
+pause
+'@ | Set-Content -LiteralPath (Join-Path $output 'Instalar.cmd') -Encoding ASCII
+@'
+@echo off
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0fetch-models.ps1" -Only ggml-large-v3-turbo-q5_0.bin,ggml-silero-v6.2.0.bin
+pause
+'@ | Set-Content -LiteralPath (Join-Path $output 'Baixar-modelos.cmd') -Encoding ASCII
 $appExe = Join-Path $output 'Somning.App.exe'
 $engineExe = Join-Path $engineOutput 'Somning.Engine.exe'
-
-if (-not (Test-Path -LiteralPath $appExe)) {
-    throw "Packaging error: Somning.App.exe was not found in $output"
+if (-not (Test-Path -LiteralPath $appExe) -or -not (Test-Path -LiteralPath $engineExe)) { throw 'Missing app or engine executable.' }
+$manifest = [ordered]@{
+    Package = 'Somning'; Version = $version; Configuration = $Configuration; Runtime = 'win-x64'
+    Harness = [bool]$WithHarness; BuiltAt = [DateTime]::UtcNow.ToString('o')
+    AppExecutable = 'Somning.App.exe'; EngineExecutable = 'engine\Somning.Engine.exe'
+    ModelsIncluded = $false; AuthenticodeSigned = $false
 }
-if (-not (Test-Path -LiteralPath $engineExe)) {
-    throw "Packaging error: Somning.Engine.exe was not found in $engineOutput"
-}
-
-Write-Host "`n[4/4] Writing package manifest..." -ForegroundColor Yellow
-$manifest = @{
-    Package = "Somning"
-    Configuration = $Configuration
-    Runtime = "win-x64"
-    Harness = [bool]$WithHarness
-    BuiltAt = [DateTime]::UtcNow.ToString("o")
-    AppExecutable = "Somning.App.exe"
-    EngineExecutable = "engine\Somning.Engine.exe"
-    AppSizeMB = [Math]::Round((Get-Item $appExe).Length / 1MB, 2)
-    EngineSizeMB = [Math]::Round((Get-Item $engineExe).Length / 1MB, 2)
-}
-$manifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $output 'package-manifest.json') -Encoding UTF8
-
-Write-Host "`n=== Package Complete ===" -ForegroundColor Green
-Write-Host "Somning packaged successfully at: $output"
+$manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $output 'package-manifest.json') -Encoding UTF8
+$suffix = if ($WithHarness) { '-harness' } else { '' }
+$zip = Join-Path $publishRoot "Somning-$version-win-x64$suffix.zip"
+Compress-Archive -LiteralPath $output -DestinationPath $zip -Force -CompressionLevel Optimal
+$digest = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+"$digest  $([IO.Path]::GetFileName($zip))" | Set-Content -LiteralPath ($zip + '.sha256') -Encoding ASCII
+Write-Host "Package ready: $zip"
+Write-Host "SHA256: $digest"

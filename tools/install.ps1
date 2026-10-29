@@ -41,6 +41,21 @@ if (-not $SourceDir) {
 $source = [System.IO.Path]::GetFullPath($SourceDir)
 $target = [System.IO.Path]::GetFullPath($InstallDir)
 
+# Validate before stopping processes or copying into an arbitrary custom location.
+$sourcePrefix = $source.TrimEnd([char]92) + '\'
+$targetPrefix = $target.TrimEnd([char]92) + '\'
+if ($sourcePrefix.StartsWith($targetPrefix, [StringComparison]::OrdinalIgnoreCase) -or
+    $targetPrefix.StartsWith($sourcePrefix, [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'Source and install directories must be separate, non-nested directories.'
+}
+if (Test-Path -LiteralPath $target) {
+    if ((Get-Item -LiteralPath $target -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'InstallDir cannot be a junction or symbolic link.' }
+    if (@(Get-ChildItem -LiteralPath $target -Force).Count -gt 0 -and
+        -not (Test-Path -LiteralPath (Join-Path $target 'Somning.App.exe'))) {
+        throw 'InstallDir must be empty or an existing Somning installation.'
+    }
+}
+
 Write-Info "=== Instalador do Somning ==="
 Write-Info "Origem: $source"
 Write-Info "Destino: $target"
@@ -55,7 +70,8 @@ if (-not (Test-Path -LiteralPath $sourceEngine)) {
 }
 
 # 1. Parar instâncias em execução
-$running = Get-Process -Name 'Somning.App','Somning.Engine' -ErrorAction SilentlyContinue
+$running = Get-Process -Name 'Somning.App','Somning.Engine' -ErrorAction SilentlyContinue |
+    Where-Object { $_.Path -and $_.Path.StartsWith($targetPrefix, [StringComparison]::OrdinalIgnoreCase) }
 if ($running) {
     Write-Info "Encerrando instâncias em execução..."
     $running | Stop-Process -Force
@@ -167,10 +183,16 @@ if ($StartWithWindows) {
     Set-ItemProperty -Path $runKey -Name 'Somning' -Value "`"$installedApp`" --tray"
 }
 
-# 5. Inicialização pós-instalação se solicitado
+# 5. Marcador da instalação (usado pelo desinstalador para validar o diretório).
+$version = [Diagnostics.FileVersionInfo]::GetVersionInfo($installedApp).ProductVersion
+if (-not $version) { $version = '1.0.0' }
+@{ Product = 'Somning'; InstallDirectory = $target; Version = $version } |
+    ConvertTo-Json | Set-Content -LiteralPath (Join-Path $target 'installation.json') -Encoding UTF8
+
+# 6. Inicialização pós-instalação se solicitado
 if ($LaunchAfterInstall) {
     Write-Info "Iniciando Somning..."
-    Start-Process -FilePath $installedApp -ArgumentList '--tray' -WorkingDirectory $target
+    Start-Process -FilePath $installedApp -ArgumentList '--tray' -WorkingDirectory $target -WindowStyle Hidden
 }
 
 Write-Success "`nSomning instalado com sucesso em $target"

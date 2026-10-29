@@ -20,6 +20,7 @@ Somning goes from a headless, agent-verifiable dictation loop (hotkey, mic, loca
 **Depends on**: Nothing (first phase)
 **Requirements**: HOTK-01, HOTK-02, HOTK-03, AUD-01, AUD-04, STT-01, STT-02, STT-03, STT-04, STT-08, OUT-01, OUT-02, OUT-03, APP-06
 **Success Criteria** (what must be TRUE):
+
   1. First task gate passes: a published (no dev SDK) build runs Whisper.net large-v3-turbo inference on Windows 10 19045 for a pt-BR WAV fixture, and a benchmark report (Vulkan vs CPU, f16/q8/q5, p50/p95 stop-to-paste) fixes the default engine settings and the STT-08 latency budget
   2. A scripted E2E injects the hotkey (tap-tap toggle and hold-release), plays a pt-BR fixture, and the expected text appears in Notepad (read via WM_GETTEXT/UIA) and on the clipboard, with no hotkey characters leaking into Notepad
   3. Silence-only, noise-only, and very short (< ~0.4 s) fixtures paste nothing and never produce hallucinations such as "Obrigado." or "Amara.org"
@@ -29,6 +30,7 @@ Somning goes from a headless, agent-verifiable dictation loop (hotkey, mic, loca
 **Plans:** 13/13 plans executed
 
 Plans (all execution and verification sequential):
+
 - [x] 01-01-PLAN.md - Worker/protocol tracer, published gate and model fetch (wave 1)
 - [x] 01-02-PLAN.md - App-worker-clipboard skeleton and Core contracts (wave 2)
 - [x] 01-03-PLAN.md - Global hook, tap/hold and long-hold watchdog (wave 3)
@@ -50,6 +52,7 @@ Plans (all execution and verification sequential):
 **Depends on**: Phase 1
 **Requirements**: HOTK-04, HOTK-05, AUD-02, AUD-03, STT-07, OUT-04, OUT-05, OVL-01, OVL-02, OVL-03, OVL-04, APP-01, APP-02, APP-03, APP-04, APP-05
 **Success Criteria** (what must be TRUE):
+
   1. While recording, a pill with a live mic-driven waveform appears bottom-center of the active monitor; automated checks assert window styles (no-activate, topmost, click-through), that GetForegroundWindow is unchanged, and screenshot pixels at 100% and 150% DPI
   2. The overlay shows distinct listening, transcribing and pt-BR error/notice states (missing mic, privacy-blocked, silence-only, nothing detected, model missing) and hides when done
   3. Pressing Esc while recording cancels it and nothing is transcribed or pasted; the tray menu offers Configurações, Colar último, Abrir logs and Sair, and re-pasting the last transcript works
@@ -57,6 +60,7 @@ Plans (all execution and verification sequential):
   5. First run with no model downloads it with progress, resume and SHA-256 verification against a local test server, reporting retryable failures
 
 **Plans**: 6 plans
+
 - [x] 02-01-PLAN.md - Single instance mutex, persisted settings with DPAPI, and corruption recovery (wave 1)
 - [x] 02-02-PLAN.md - Esc cancellation and hotkey conflict validator (wave 2)
 - [x] 02-03-PLAN.md - System tray menu with pt-BR actions and last transcript repaste (wave 3)
@@ -73,11 +77,13 @@ Plans (all execution and verification sequential):
 **Depends on**: Phase 2
 **Requirements**: STT-05, STT-06
 **Success Criteria** (what must be TRUE):
+
   1. With a key entered and cloud selected, the same pt-BR fixture suite passes against a mock HTTP server for both providers; real-API runs execute only when a key env var is present (skipped, never failed)
   2. No network, invalid key, rate limit and timeout each show a distinct pt-BR overlay message, the recording is kept for retry, and no silent fallback to local occurs
   3. Cloud is never used unless the user selected it and entered a key; logs and error output contain no API keys
 
 **Plans**: 2 plans
+
 - [x] 03-01-PLAN.md - Cloud transcriber contracts, Groq & OpenAI clients, error classification & key masking (wave 1)
 - [x] 03-02-PLAN.md - Mock HTTP fixture suite, recording retention & cloud adapter integration (wave 2)
 
@@ -90,11 +96,16 @@ Plans (all execution and verification sequential):
 **Depends on**: Phase 3
 **Requirements**: DIST-01, DIST-02, DIST-03
 **Success Criteria** (what must be TRUE):
+
   1. A per-user installer runs unattended on a clean Windows 10 profile (including non-ASCII and space paths) and the installed binary passes the Phase 1 E2E into Notepad
   2. Enabling start-with-Windows registers the HKCU Run entry and the app starts minimized to tray on logon
   3. After simulated sleep/resume and lock/unlock, and a scripted soak of many dictations, the hotkey hook still works (watchdog reinstall) and a paste-matrix report (Notepad, Chrome/Edge, VS Code, Windows Terminal, Word, elevated Notepad notice) is produced
 
-**Plans**: 3/3 plans executed
+**Plans**: 4/6 plans executed
+
+- [x] 04-04-PLAN.md
+- [ ] 04-05-PLAN.md
+- [ ] 04-06-PLAN.md
 - [x] 04-01-PLAN.md - Start-with-Windows autostart, registry HKCU & tray/settings toggle (wave 1)
 - [x] 04-02-PLAN.md - Power & session resilience (sleep/resume, lock/unlock) & hook watchdog (wave 2)
 - [x] 04-03-PLAN.md - Per-user installer, directory layout & soak/paste matrix verification (wave 3)
@@ -106,4 +117,4 @@ Plans (all execution and verification sequential):
 | 1. Dictation Loop MVP | 13/13 | Complete | 2026-10-23 |
 | 2. Overlay, Tray, Settings & Cancel | 6/6 | Complete | 2026-10-23 |
 | 3. Cloud Engine | 2/2 | Complete | 2026-10-23 |
-| 4. Packaging, Autostart & Hardening | 3/3 | In Progress|  |
+| 4. Packaging, Autostart & Hardening | 4/6 | In Progress|  |

@@ -20,6 +20,7 @@ public sealed class PasteTargetMatrixTests
     private const string PastedText = "Olá, ação às 10h: coração, não é São João.";
     private static readonly TimeSpan WindowTimeout = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan ReadBackTimeout = TimeSpan.FromSeconds(3);
+    private const int ReadBackAttempts = 3;
 
     public static TheoryData<string> TargetIds => new(PasteTargetCatalog.Ids);
 
@@ -60,8 +61,9 @@ public sealed class PasteTargetMatrixTests
                 $"captured foreground 0x{target.ForegroundHwnd:X} (pid {target.ProcessId}, class '{PasteTargetCatalog.WindowClass(target.ForegroundHwnd)}') " +
                 $"is not the {app.DisplayName} window 0x{window:X} (pid {ownerPid})");
             var focusClass = PasteTargetCatalog.WindowClass(target.FocusHwnd);
-            var editorFocused = target.FocusQueried && focusClass == PasteTargetCatalog.ExpectedEditorClass(id);
-            var focusMessage = $"focused control class is '{focusClass}', expected the {app.DisplayName} editor '{PasteTargetCatalog.ExpectedEditorClass(id)}'";
+            var expectedClasses = PasteTargetCatalog.ExpectedEditorClasses(id);
+            var editorFocused = target.FocusQueried && expectedClasses.Contains(focusClass);
+            var focusMessage = $"focused control class is '{focusClass}', expected the {app.DisplayName} editor ({string.Join(" or ", expectedClasses)})";
             // Word opens a command-line document behind the File > Open backstage and no reliable way to focus the body without
             // UI automation is known (deferred-items.md): report SKIPPED (not verified) rather than a flaky FAIL. Others must pass.
             if (id == "word") Requires.That(editorFocused, focusMessage + " (Word backstage covers the document; see deferred-items.md)");
@@ -87,18 +89,23 @@ public sealed class PasteTargetMatrixTests
     /// <summary>Sentinel clipboard, then Ctrl+A and Ctrl+C in the focused control; returns what the app copied.</summary>
     private static async Task<string> ReadBackAsync(CancellationToken token)
     {
+        // Word applies a paste asynchronously (seconds on a cold start), and Ctrl+A / Ctrl+C on a still-empty document copies nothing.
+        // Repeat ONLY the read-back until the clipboard changes; the paste itself is never repeated and the text must still match exactly.
         await Task.Delay(500, token);
         E2EFixtureSupport.SetClipboard(Sentinel);
-        SendCtrlChord(VIRTUAL_KEY.VK_A);
-        await Task.Delay(150, token);
-        SendCtrlChord(VIRTUAL_KEY.VK_C);
-        var until = DateTime.UtcNow + ReadBackTimeout;
         var text = Sentinel;
-        while (DateTime.UtcNow < until)
+        for (var attempt = 0; attempt < ReadBackAttempts && text == Sentinel; attempt++)
         {
-            text = ClipboardProbe.ReadText();
-            if (text != Sentinel) break;
-            await Task.Delay(50, token);
+            SendCtrlChord(VIRTUAL_KEY.VK_A);
+            await Task.Delay(150, token);
+            SendCtrlChord(VIRTUAL_KEY.VK_C);
+            var until = DateTime.UtcNow + ReadBackTimeout;
+            while (DateTime.UtcNow < until)
+            {
+                text = ClipboardProbe.ReadText();
+                if (text != Sentinel) break;
+                await Task.Delay(50, token);
+            }
         }
         return text;
     }

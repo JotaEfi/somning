@@ -156,13 +156,16 @@ public static class PasteTargetCatalog
     }
 
     /// <summary>
-    /// Window class of the control that must hold the keyboard focus for a paste into the document to be meaningful:
-    /// the web-contents widget for Chromium apps (not the address bar or a dialog) and the Word document body.
+    /// Window classes accepted for the control that holds the keyboard focus. Observed on this machine (04-06 run 6):
+    /// GetGUIThreadInfo.hwndFocus reports the Chromium top-level class <c>Chrome_WidgetWin_1</c> for Chrome and VS Code
+    /// (the web contents are not a separate focus window there); <c>Chrome_RenderWidgetHostHWND</c> is accepted too. Both are
+    /// weaker than a true editor check, so the foreground window and process identity are asserted as well. Word's
+    /// document body is <c>_WwG</c>.
     /// </summary>
-    public static string ExpectedEditorClass(string id) => id switch
+    public static string[] ExpectedEditorClasses(string id) => id switch
     {
-        "chrome" or "edge" or "vscode" => "Chrome_RenderWidgetHostHWND",
-        "word" => "_WwG",
+        "chrome" or "edge" or "vscode" => ["Chrome_WidgetWin_1", "Chrome_RenderWidgetHostHWND"],
+        "word" => ["_WwG"],
         _ => throw new ArgumentException("Unknown paste target " + id, nameof(id))
     };
 

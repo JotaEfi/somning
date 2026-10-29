@@ -78,3 +78,4 @@ Progress: [██████████] 100%
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 261029-ldb | Polir animacao da pilula de escuta | 2026-10-29 | cea333e | [261029-ldb-polir-animacao-da-pilula-de-escuta](./quick/261029-ldb-polir-animacao-da-pilula-de-escuta/) |
+| 261029-orb | Orb liquida estilo Siri + robustez do motor (nunca ficar em Transcrevendo, ganho adaptativo de voz) | 2026-10-29 | 1fc9522 | [261029-orb-orb-liquida-estilo-siri-robustez-do-motor](./quick/261029-orb-orb-liquida-estilo-siri-robustez-do-motor/) |

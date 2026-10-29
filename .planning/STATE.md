@@ -72,3 +72,9 @@ Progress: [██████████] 100%
 ## Decisions
 
 - [Phase 04]: 04-06: ChordTracker resynced (not zeroed) on hook reinstall; Word paste row left as known FAIL; DIST-01/03 pending owner-acceptance confirmation
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 261029-ldb | Polir animacao da pilula de escuta | 2026-10-29 | cea333e | [261029-ldb-polir-animacao-da-pilula-de-escuta](./quick/261029-ldb-polir-animacao-da-pilula-de-escuta/) |

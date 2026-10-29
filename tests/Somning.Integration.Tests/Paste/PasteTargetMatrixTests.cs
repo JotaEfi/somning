@@ -68,6 +68,7 @@ public sealed class PasteTargetMatrixTests
         {
             if (launched is not null) PasteTargetCatalog.KillStarted(launched, ownerPid);
             launched?.Dispose();
+            PasteTargetCatalog.KillTreesUsingProfile(tempDir);
             DeleteWithRetries(tempDir);
         }
     }

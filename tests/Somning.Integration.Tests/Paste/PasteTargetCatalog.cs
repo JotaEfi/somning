@@ -164,6 +164,38 @@ public static class PasteTargetCatalog
         catch (ArgumentException) { }
     }
 
+    /// <summary>
+    /// Kills EVERY process whose command line mentions the temp profile directory name (launcher, browser/editor children,
+    /// crashpad, GPU, renderer...). Multi-process apps detach children from the launcher, so a PID-based kill leaves them
+    /// alive holding inherited stdio handles, which hangs any runner waiting on the redirected output.
+    /// </summary>
+    public static void KillTreesUsingProfile(string tempDir)
+    {
+        var token = Path.GetFileName(tempDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        if (string.IsNullOrWhiteSpace(token)) return;
+        const string Script =
+            "$d=$env:SOMNING_KILL_TOKEN; Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -and " +
+            "$_.CommandLine.IndexOf($d,[StringComparison]::OrdinalIgnoreCase) -ge 0 } | " +
+            "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }";
+        var info = new ProcessStartInfo("powershell.exe")
+        {
+            UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true
+        };
+        info.ArgumentList.Add("-NoProfile"); info.ArgumentList.Add("-NonInteractive");
+        info.ArgumentList.Add("-Command"); info.ArgumentList.Add(Script);
+        info.Environment["SOMNING_KILL_TOKEN"] = token;
+        try
+        {
+            using var killer = Process.Start(info);
+            if (killer is null) return;
+            _ = killer.StandardOutput.ReadToEndAsync();
+            _ = killer.StandardError.ReadToEndAsync();
+            if (!killer.WaitForExit(20000)) killer.Kill(entireProcessTree: true);
+        }
+        catch (System.ComponentModel.Win32Exception) { }
+        catch (InvalidOperationException) { }
+    }
+
     private static void TryKillTree(Process process)
     {
         try { if (!process.HasExited) { process.Kill(entireProcessTree: true); process.WaitForExit(5000); } }

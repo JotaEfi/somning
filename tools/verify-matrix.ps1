@@ -79,6 +79,16 @@ if (-not $ConfirmInteractive) {
     exit 3
 }
 
+# Refuse to start when another verify-matrix.ps1 is already running: two runs would fight over the desktop, the clipboard,
+# the hook and the installed copies (a hung earlier run is a zombie that must be killed first).
+$otherRuns = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+    $_.ProcessId -ne $PID -and $_.Name -match '^(powershell|pwsh)\.exe$' -and $_.CommandLine -and
+    $_.CommandLine -match 'verify-matrix\.ps1' -and $_.CommandLine -notmatch '-SelfCheck' })
+if ($otherRuns.Count -gt 0) {
+    Write-Host ('Another verify-matrix.ps1 is already running (PID ' + (($otherRuns | ForEach-Object { $_.ProcessId }) -join ', ') + '); refusing to start. Stop it first.') -ForegroundColor Red
+    exit 4
+}
+
 $results = New-Object 'Collections.Generic.List[object]'
 
 function Add-Result([string]$Category, [string]$Scenario, [string]$Method, [string]$Status, [string]$Evidence) {
@@ -89,10 +99,52 @@ function Add-Result([string]$Category, [string]$Scenario, [string]$Method, [stri
     })
 }
 
+# Kills processes left behind by paste-target tests (temp profile directories are named somning-paste-<marker>).
+# Multi-process apps (VS Code, Chrome, Edge) detach children from the launcher; those children can outlive the test exe.
+function Stop-OrphanTestProcesses {
+    try {
+        Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
+            $_.ProcessId -ne $PID -and $_.CommandLine -and $_.CommandLine.IndexOf('somning-paste-', [StringComparison]::OrdinalIgnoreCase) -ge 0
+        } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    } catch { Write-Host "Orphan cleanup warning: $($_.Exception.Message)" -ForegroundColor Yellow }
+}
+
+# Runs a native exe with stdout/stderr redirected to FILES (never pipes) and a hard timeout. Orphaned grandchildren that inherit
+# the handles cannot hold this script (we only wait for the exe itself), and native stderr can never become a PowerShell error.
+function Invoke-NativeBounded([string]$Exe, [string[]]$Arguments, [int]$TimeoutSeconds = 600) {
+    $outFile = Join-Path $env:TEMP ('somning-native-' + [guid]::NewGuid().ToString('N') + '.out')
+    $errFile = Join-Path $env:TEMP ('somning-native-' + [guid]::NewGuid().ToString('N') + '.err')
+    $quoted = @($Arguments | ForEach-Object { if ($_ -match '[\s"]') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ } })
+    $timedOut = $false; $exit = -1
+    $proc = Start-Process -FilePath $Exe -ArgumentList $quoted -NoNewWindow -PassThru -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+    $null = $proc.Handle
+    try {
+        if (-not $proc.WaitForExit($TimeoutSeconds * 1000)) {
+            $timedOut = $true
+            & taskkill.exe /PID $proc.Id /T /F 2>&1 | Out-Null
+            [void]$proc.WaitForExit(10000)
+        }
+        $proc.WaitForExit()
+        $exit = $proc.ExitCode
+    } finally {
+        Stop-OrphanTestProcesses
+    }
+    $text = ''
+    foreach ($f in @($outFile, $errFile)) {
+        if (Test-Path -LiteralPath $f) {
+            try { $text += [IO.File]::ReadAllText($f) + "`n" } catch { }
+            Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue
+        }
+    }
+    return [pscustomobject]@{ Exit = $exit; Output = $text; TimedOut = $timedOut }
+}
+
 # Runs an xunit v3 in-process runner once and maps its summary line to a status (no retries).
 function Invoke-XunitOnce([string]$Exe, [string[]]$Filter, [int]$ExpectedTotal) {
-    $output = & $Exe @Filter 2>&1 | Out-String
-    $exit = $LASTEXITCODE
+    $native = Invoke-NativeBounded $Exe $Filter 600
+    $output = $native.Output
+    $exit = $native.Exit
+    if ($native.TimedOut) { return [pscustomobject]@{ Status = 'FAIL'; Counts = 'runner timed out after 600 s and was killed' } }
     $m = [regex]::Match($output, 'Total:\s*(\d+),\s*Errors:\s*(\d+),\s*Failed:\s*(\d+),\s*Skipped:\s*(\d+)')
     if (-not $m.Success) { return [pscustomobject]@{ Status = 'FAIL'; Counts = "no xunit summary (exit $exit)" } }
     $total = [int]$m.Groups[1].Value; $errors = [int]$m.Groups[2].Value
@@ -138,8 +190,9 @@ function Invoke-XunitXml([string]$Exe, [string[]]$Filter, [hashtable]$ChildEnv =
     $saved = @{}
     foreach ($k in $ChildEnv.Keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k, 'Process'); [Environment]::SetEnvironmentVariable($k, [string]$ChildEnv[$k], 'Process') }
     try {
-        & $Exe @Filter -preEnumerateTheories -result-xml $xmlPath 2>&1 | Out-Null
-        $exit = $LASTEXITCODE
+        $native = Invoke-NativeBounded $Exe (@($Filter) + @('-preEnumerateTheories', '-result-xml', $xmlPath)) 600
+        $exit = $native.Exit
+        if ($native.TimedOut) { return [pscustomobject]@{ Ran = $true; Exit = $exit; Tests = @(); Note = 'runner timed out after 600 s and was killed' } }
     } finally {
         foreach ($k in $ChildEnv.Keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k], 'Process') }
     }
@@ -169,6 +222,7 @@ function Convert-TestStatus($Test, [string]$PassNote, [string]$MissingNote) {
     }
 }
 
+try {
 Write-Host '=== Somning Paste Matrix & Deployment Verifier ===' -ForegroundColor Cyan
 
 # -----------------------------------------------------------------------------
@@ -492,3 +546,7 @@ Write-Host "Report written to: $reportPath" -ForegroundColor Green
 
 if ($nFail -gt 0) { throw "$nFail matrix check(s) failed." }
 Write-Host "`n=== Matrix finished: $overall ===" -ForegroundColor Green
+} finally {
+    # Never leave test-launched browsers/editors or runner children behind (they hold inherited handles and profiles).
+    Stop-OrphanTestProcesses
+}

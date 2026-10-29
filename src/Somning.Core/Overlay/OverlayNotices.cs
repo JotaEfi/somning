@@ -14,4 +14,15 @@ public static class OverlayNotices
         CloudErrorCodes.Timeout => OverlayNoticeKind.CloudTimeout,
         _ => null
     };
+
+    /// <summary>Error code reported when the transcription ceiling elapsed without an answer from the engine.</summary>
+    public const string TranscribeTimeoutCode = "transcribe_timeout";
+
+    /// <summary>
+    /// Notice for any failed transcription: cloud codes keep their specific text, a timeout says so, and every other
+    /// failure (engine down, crashed, unclassified) gets the generic recoverable-failure notice instead of silence.
+    /// </summary>
+    public static OverlayNoticeKind ForFailure(string? errorCode) =>
+        ForErrorCode(errorCode)
+        ?? (errorCode == TranscribeTimeoutCode ? OverlayNoticeKind.TranscribeTimeout : OverlayNoticeKind.EngineFailed);
 }

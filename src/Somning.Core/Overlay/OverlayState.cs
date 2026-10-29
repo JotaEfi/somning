@@ -18,7 +18,9 @@ public enum OverlayNoticeKind
     CloudNoNetwork,
     CloudInvalidKey,
     CloudRateLimit,
-    CloudTimeout
+    CloudTimeout,
+    EngineFailed,
+    TranscribeTimeout
 }
 
 /// <summary>Single source of user-facing overlay text (APP-05, pt-BR).</summary>
@@ -38,6 +40,8 @@ public static class OverlayText
         OverlayNoticeKind.CloudInvalidKey => "Chave de API inválida",
         OverlayNoticeKind.CloudRateLimit => "Limite de requisições excedido",
         OverlayNoticeKind.CloudTimeout => "Tempo limite esgotado",
+        OverlayNoticeKind.EngineFailed => "Falha na transcrição, áudio salvo",
+        OverlayNoticeKind.TranscribeTimeout => "Tempo esgotado, áudio salvo",
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown overlay notice kind.")
     };
 }

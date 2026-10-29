@@ -63,5 +63,13 @@ public sealed class AudioLevelTracker
         return bars;
     }
 
+    /// <summary>Inverse of <see cref="GenerateWaveformBars(int, float)"/>: the energy encoded by the tallest bar, in [0, 1].</summary>
+    public static float LevelFromBars(ReadOnlySpan<float> bars)
+    {
+        var peak = 0f;
+        foreach (var bar in bars) peak = Math.Max(peak, bar);
+        return Math.Clamp((peak - MinimumBarHeight) / (1f - MinimumBarHeight), 0f, 1f);
+    }
+
     public float[] GenerateWaveformBars(int count) => GenerateWaveformBars(count, Level);
 }

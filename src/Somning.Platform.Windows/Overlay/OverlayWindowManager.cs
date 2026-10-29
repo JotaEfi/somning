@@ -7,7 +7,7 @@ namespace Somning.Platform.Windows.Overlay;
 
 public sealed class OverlayWindowManager : IOverlayView
 {
-    private const string WindowClassName = "Somning_Overlay_Pill_Window";
+    private const string WindowClassName = "Somning_Overlay_Orb_Window";
     private const uint WmApp = 0x8000;
     private const uint WmAppUpdate = WmApp + 101;
     private const uint WmAppQuit = WmApp + 102;
@@ -37,7 +37,6 @@ public sealed class OverlayWindowManager : IOverlayView
 
     private const int DtSingleLine = 0x00000020;
     private const int DtVCenter = 0x00000004;
-    private const int DtLeft = 0x00000000;
     private const int DtEndEllipsis = 0x00008000;
 
     private readonly Thread staThread;
@@ -50,10 +49,11 @@ public sealed class OverlayWindowManager : IOverlayView
     private readonly WindowProcedure wndProcDelegate;
 
     // Render-thread-only animation state (touched exclusively from the overlay STA thread).
-    private readonly OverlayAnimator animator = new();
+    private readonly OrbAnimator animator = new();
+    private readonly OrbRenderer renderer = new();
     private OverlayViewModel displayModel = OverlayViewModel.CreateHidden();
-    private float[]? pendingBars;   // written by the audio thread, read by the render thread
-    private float[]? appliedBars;
+    private float pendingLevel;     // written by the audio thread (Volatile), read by the render thread
+    private CaptionState captionState;
     private long lastTick;
     private bool windowShown;
     private bool placementDirty;
@@ -84,7 +84,7 @@ public sealed class OverlayWindowManager : IOverlayView
 
     public void ShowListening(float[] waveformBars)
     {
-        Volatile.Write(ref pendingBars, waveformBars);
+        Volatile.Write(ref pendingLevel, AudioLevelTracker.LevelFromBars(waveformBars));
         PostModelUpdate(OverlayViewModel.CreateListening(waveformBars));
     }
 
@@ -93,7 +93,7 @@ public sealed class OverlayWindowManager : IOverlayView
         if (disposed || currentModel.Mode != OverlayMode.Listening) return;
         currentModel = OverlayViewModel.CreateListening(waveformBars);
         // Picked up by the next animation frame; no queue traffic per audio buffer.
-        Volatile.Write(ref pendingBars, waveformBars);
+        Volatile.Write(ref pendingLevel, AudioLevelTracker.LevelFromBars(waveformBars));
     }
 
     public void ShowTranscribing() => PostModelUpdate(OverlayViewModel.CreateTranscribing());
@@ -106,7 +106,7 @@ public sealed class OverlayWindowManager : IOverlayView
     {
         if (disposed) return;
         currentModel = model;
-        if (model.Mode != OverlayMode.Listening) Volatile.Write(ref pendingBars, null);
+        if (model.Mode != OverlayMode.Listening) Volatile.Write(ref pendingLevel, 0f);
         actionQueue.Enqueue(() => ApplyModel(model));
         if (threadId != 0)
         {
@@ -262,13 +262,13 @@ public sealed class OverlayWindowManager : IOverlayView
 
         if (!animator.IsActive) lastTick = Stopwatch.GetTimestamp();
 
-        ComputeLayout(model.Mode);
+        ComputeLayout();
         displayModel = model;
         animator.Show(model.Mode);
-        if (model.Mode == OverlayMode.Listening) animator.SetLiveBars(model.Bars);
+        if (model.Mode == OverlayMode.Listening) animator.SetLevel(AudioLevelTracker.LevelFromBars(model.Bars));
     }
 
-    private void ComputeLayout(OverlayMode mode)
+    private void ComputeLayout()
     {
         var fgHwnd = GetForegroundWindow();
         var monitor = MonitorFromWindow(fgHwnd != 0 ? fgHwnd : GetDesktopWindow(), MonitorDefaultToNearest);
@@ -280,13 +280,13 @@ public sealed class OverlayWindowManager : IOverlayView
         if (dpi == 0) dpi = 96;
         dpiScale = dpi / 96.0f;
 
-        int baseWidth = mode == OverlayMode.Notice ? 280 : 220;
-        layoutWidth = (int)Math.Round(baseWidth * dpiScale);
-        layoutHeight = (int)Math.Round(44 * dpiScale);
+        var layout = OrbLayout.Scaled(dpiScale);
+        layoutWidth = layout.Width;
+        layoutHeight = layout.Height;
 
         // Bottom center of the active monitor work area.
         layoutX = mi.rcWork.left + (mi.rcWork.right - mi.rcWork.left - layoutWidth) / 2;
-        layoutY = mi.rcWork.bottom - layoutHeight - (int)Math.Round(36 * dpiScale);
+        layoutY = mi.rcWork.bottom - layoutHeight - (int)Math.Round(8 * dpiScale);
         placementDirty = true;
     }
 
@@ -295,12 +295,7 @@ public sealed class OverlayWindowManager : IOverlayView
         var dt = (float)((now - lastTick) / (double)Stopwatch.Frequency);
         lastTick = now;
 
-        var bars = Volatile.Read(ref pendingBars);
-        if (bars is not null && animator.Frame.Mode == OverlayMode.Listening && !ReferenceEquals(bars, appliedBars))
-        {
-            animator.SetLiveBars(bars);
-            appliedBars = bars;
-        }
+        if (animator.Frame.Mode == OverlayMode.Listening) animator.SetLevel(Volatile.Read(ref pendingLevel));
 
         if (!animator.Tick(dt)) return;
         DrawFrame();
@@ -310,7 +305,6 @@ public sealed class OverlayWindowManager : IOverlayView
     {
         ShowWindow(hwnd, SwHide);
         windowShown = false;
-        appliedBars = null;
     }
 
     private void DrawFrame()
@@ -327,7 +321,7 @@ public sealed class OverlayWindowManager : IOverlayView
             unsafe
             {
                 var pixels = new Span<uint>((void*)surfaceBits, layoutWidth * layoutHeight);
-                RenderToBuffer(pixels, layoutWidth, layoutHeight, dpiScale, displayModel, animator.Frame, animator.Bars, surfaceDc);
+                RenderToBuffer(renderer, pixels, layoutWidth, layoutHeight, dpiScale, displayModel, animator.Frame, surfaceDc, ref captionState);
             }
 
             var ptSrc = new POINT { X = 0, Y = 0 };
@@ -337,7 +331,7 @@ public sealed class OverlayWindowManager : IOverlayView
             {
                 BlendOp = AcSrcOver,
                 BlendFlags = 0,
-                SourceConstantAlpha = (byte)Math.Round(Math.Clamp(animator.Frame.Opacity, 0f, 1f) * 255f),
+                SourceConstantAlpha = 255, // opacity is baked into the premultiplied pixels
                 AlphaFormat = AcSrcAlpha
             };
 
@@ -418,248 +412,102 @@ public sealed class OverlayWindowManager : IOverlayView
 
     // ---- Software rendering (pure pixel work, unit-testable without a window) ----
 
+    /// <summary>Cached caption metrics so the plate width is measured once per text, not once per frame.</summary>
+    public struct CaptionState
+    {
+        internal string? Text;
+        internal int FontHeight;
+        internal int PlateWidth;
+    }
+
+    /// <summary>Renders a static orb frame (no caption text) into a premultiplied BGRA buffer.</summary>
     public static void RenderToBuffer(Span<uint> pixels, int width, int height, float scale, OverlayViewModel model, nint memDc = 0)
-        => RenderToBuffer(pixels, width, height, scale, model, OverlayFrame.Static(model.Mode), model.Bars, memDc);
+    {
+        var state = new CaptionState();
+        RenderToBuffer(new OrbRenderer(), pixels, width, height, scale, model, OrbFrame.Static(model.Mode, 0.3f), memDc, ref state);
+    }
 
     public static void RenderToBuffer(
-        Span<uint> pixels, int width, int height, float scale,
-        OverlayViewModel model, in OverlayFrame frame, ReadOnlySpan<float> bars, nint memDc = 0)
+        OrbRenderer orb, Span<uint> pixels, int width, int height, float scale,
+        OverlayViewModel model, in OrbFrame frame, nint memDc, ref CaptionState caption)
     {
-        RenderPillBackground(pixels, width, height, scale, frame);
-        RenderStatusDot(pixels, width, height, scale, frame);
-
-        if (frame.Mode is OverlayMode.Listening or OverlayMode.Transcribing && bars.Length > 0)
+        var text = ShouldShowCaption(frame.Mode) ? model.Text ?? string.Empty : string.Empty;
+        var plateWidth = 0;
+        if (memDc != 0 && text.Length > 0)
         {
-            RenderWaveformBars(pixels, width, height, scale, frame, bars);
-        }
-
-        if (memDc != 0)
-        {
-            RenderText(memDc, pixels, width, height, scale, model);
-        }
-    }
-
-    private static uint Accent(OverlayMode mode) => mode switch
-    {
-        OverlayMode.Listening => Rgb(239, 68, 68),     // Red #EF4444
-        OverlayMode.Transcribing => Rgb(56, 189, 248), // Cyan #38BDF8
-        OverlayMode.Notice => Rgb(245, 158, 11),       // Amber #F59E0B
-        _ => Rgb(200, 200, 200)
-    };
-
-    private static uint Rgb(uint r, uint g, uint b) => 0xFF000000 | (r << 16) | (g << 8) | b;
-
-    /// <summary>Per-channel (premultiplied-safe) linear blend of two ARGB pixels.</summary>
-    private static uint Lerp(uint from, uint to, float t)
-    {
-        if (t <= 0f) return from;
-        if (t >= 1f) return to;
-        var inv = 1f - t;
-        var a = (uint)((from >> 24) * inv + (to >> 24) * t + 0.5f);
-        var r = (uint)(((from >> 16) & 0xFF) * inv + ((to >> 16) & 0xFF) * t + 0.5f);
-        var g = (uint)(((from >> 8) & 0xFF) * inv + ((to >> 8) & 0xFF) * t + 0.5f);
-        var b = (uint)((from & 0xFF) * inv + (to & 0xFF) * t + 0.5f);
-        return (a << 24) | (r << 16) | (g << 8) | b;
-    }
-
-    private static uint Fade(uint pixel, float coverage) => Lerp(0, pixel, coverage);
-
-    private static void RenderPillBackground(Span<uint> pixels, int width, int height, float scale, in OverlayFrame frame)
-    {
-        float s = frame.Scale;
-        float pillW = width * s;
-        float pillH = height * s;
-        float offX = (width - pillW) / 2f;
-        float offY = (height - pillH) / 2f;
-        float radius = pillH / 2.0f;
-        float borderThickness = 1.2f * scale;
-
-        byte bgA = 0xE6;
-        uint bgPixel = ((uint)bgA << 24)
-                     | ((uint)(24 * bgA / 255) << 16)
-                     | ((uint)(24 * bgA / 255) << 8)
-                     | (uint)(27 * bgA / 255);
-
-        // Border takes a soft tint of the state color that breathes with the pulse and brightens with speech.
-        uint baseBorder = Rgb(70, 63, 63);
-        float glow = frame.Mode is OverlayMode.Listening or OverlayMode.Transcribing
-            ? Math.Min(0.6f, 0.4f * frame.Pulse + 0.4f * frame.Energy)
-            : 0f;
-        uint borderPixel = Lerp(baseBorder, Accent(frame.Mode), glow);
-
-        for (int y = 0; y < height; y++)
-        {
-            float py = y + 0.5f - offY;
-            for (int x = 0; x < width; x++)
+            var fontHeight = (int)Math.Round(13 * scale);
+            if (!string.Equals(caption.Text, text, StringComparison.Ordinal) || caption.FontHeight != fontHeight)
             {
-                float px = x + 0.5f - offX;
-                if (px < 0f || px > pillW || py < 0f || py > pillH)
-                {
-                    pixels[y * width + x] = 0;
-                    continue;
-                }
-
-                float dx = px < radius ? radius - px : (px > pillW - radius ? px - (pillW - radius) : 0f);
-                float dy = Math.Abs(py - radius);
-                float dist = MathF.Sqrt(dx * dx + dy * dy);
-
-                float coverage = Math.Clamp(radius - dist + 0.5f, 0f, 1f);
-                if (coverage <= 0f)
-                {
-                    pixels[y * width + x] = 0;
-                    continue;
-                }
-
-                float inner = Math.Clamp(radius - borderThickness - dist + 0.5f, 0f, 1f);
-                pixels[y * width + x] = Fade(Lerp(borderPixel, bgPixel, inner), coverage);
+                caption = new CaptionState { Text = text, FontHeight = fontHeight, PlateWidth = MeasurePlate(memDc, text, fontHeight, width, scale) };
             }
+
+            plateWidth = caption.PlateWidth;
         }
-    }
 
-    private static void RenderStatusDot(Span<uint> pixels, int width, int height, float scale, in OverlayFrame frame)
-    {
-        float s = frame.Scale;
-        float cx = width / 2f + (20 * scale - width / 2f) * s;
-        float cy = height / 2.0f;
-        float radius = 5.0f * scale * s;
-        uint color = Accent(frame.Mode);
+        orb.Render(pixels, width, height, scale, in frame, plateWidth);
 
-        // Soft halo: pulses while idle, swells with the voice.
-        float haloAlpha = frame.Mode is OverlayMode.Listening or OverlayMode.Transcribing
-            ? 0.22f * frame.Pulse + 0.30f * frame.Energy
-            : 0f;
-        float haloRadius = radius + 5f * scale * s * (0.6f + 0.4f * frame.Pulse);
-        float reach = haloAlpha > 0.001f ? haloRadius : radius;
-
-        for (int y = (int)(cy - reach - 1); y <= (int)(cy + reach + 1); y++)
+        if (plateWidth > 0)
         {
-            if (y < 0 || y >= height) continue;
-            for (int x = (int)(cx - reach - 1); x <= (int)(cx + reach + 1); x++)
-            {
-                if (x < 0 || x >= width) continue;
-                float d = MathF.Sqrt((x + 0.5f - cx) * (x + 0.5f - cx) + (y + 0.5f - cy) * (y + 0.5f - cy));
-                ref uint px = ref pixels[y * width + x];
-
-                if (haloAlpha > 0.001f && d > radius - 0.5f && d < haloRadius)
-                {
-                    float falloff = 1f - (d - radius) / (haloRadius - radius);
-                    falloff = Math.Clamp(falloff, 0f, 1f);
-                    px = Lerp(px, color, haloAlpha * falloff * falloff);
-                }
-
-                float dotCoverage = Math.Clamp(radius - d + 0.5f, 0f, 1f);
-                if (dotCoverage > 0f) px = Lerp(px, color, dotCoverage);
-            }
+            RenderText(memDc, pixels, width, height, scale, text, plateWidth, caption.FontHeight);
         }
     }
 
-    private static void RenderWaveformBars(Span<uint> pixels, int width, int height, float scale, in OverlayFrame frame, ReadOnlySpan<float> bars)
+    // Listening needs no words (the orb is the cue); transcribing and every notice keep a small legible caption.
+    private static bool ShouldShowCaption(OverlayMode mode) => mode is OverlayMode.Transcribing or OverlayMode.Notice;
+
+    private static nint EnsureFont(int fontHeight)
     {
-        float s = frame.Scale;
-        int barCount = bars.Length;
-        float barWidth = Math.Max(2f, 3.0f * scale);
-        float barGap = 3.0f * scale;
-        float totalBarsWidth = barCount * barWidth + (barCount - 1) * barGap;
-
-        float startX = width - (24 * scale) - totalBarsWidth;
-        float centerY = height / 2.0f;
-        float maxBarHeight = height * 0.55f;
-
-        uint bright = Rgb(56, 189, 248); // Cyan
-        uint dim = Rgb(28, 94, 124);     // Same hue, quieter, for the transcribing shimmer
-        bool shimmer = frame.Mode == OverlayMode.Transcribing;
-
-        for (int i = 0; i < barCount; i++)
-        {
-            float energy = Math.Clamp(bars[i], 0.15f, 1.0f);
-            float h = Math.Max(4f * scale, maxBarHeight * energy) * s;
-            float w = barWidth * s;
-            float cx = width / 2f + (startX + i * (barWidth + barGap) + barWidth / 2f - width / 2f) * s;
-
-            uint color = shimmer ? Lerp(dim, bright, Math.Clamp((energy - 0.2f) / 0.65f, 0f, 1f)) : bright;
-            DrawCapsule(pixels, width, height, cx, centerY, w / 2f, h / 2f, color);
-        }
-    }
-
-    // Vertical anti-aliased capsule (rounded bar); halfW is also the cap radius.
-    private static void DrawCapsule(Span<uint> pixels, int width, int height, float cx, float cy, float halfW, float halfH, uint color)
-    {
-        float straight = Math.Max(0f, halfH - halfW);
-        int x0 = Math.Max(0, (int)MathF.Floor(cx - halfW - 1));
-        int x1 = Math.Min(width - 1, (int)MathF.Ceiling(cx + halfW + 1));
-        int y0 = Math.Max(0, (int)MathF.Floor(cy - halfH - 1));
-        int y1 = Math.Min(height - 1, (int)MathF.Ceiling(cy + halfH + 1));
-
-        for (int y = y0; y <= y1; y++)
-        {
-            float qy = Math.Max(Math.Abs(y + 0.5f - cy) - straight, 0f);
-            for (int x = x0; x <= x1; x++)
-            {
-                float qx = Math.Abs(x + 0.5f - cx);
-                float d = MathF.Sqrt(qx * qx + qy * qy) - halfW;
-                float coverage = Math.Clamp(0.5f - d, 0f, 1f);
-                if (coverage <= 0f) continue;
-                ref uint px = ref pixels[y * width + x];
-                px = Lerp(px, color, coverage);
-            }
-        }
-    }
-
-    private static void RenderText(nint memDc, Span<uint> pixels, int width, int height, float scale, OverlayViewModel model)
-    {
-        string text = model.Text ?? string.Empty;
-        if (string.IsNullOrEmpty(text)) return;
-
-        int textStartX = (int)(32 * scale);
-        int textEndX = model.Mode == OverlayMode.Listening ? (int)(width - 55 * scale) : (int)(width - 20 * scale);
-
-        var fontHeight = (int)Math.Round(15 * scale);
         if (cachedFont == 0 || cachedFontHeight != fontHeight)
         {
             if (cachedFont != 0) DeleteObject(cachedFont);
-            cachedFont = CreateFontW(
-                -fontHeight,
-                0, 0, 0,
-                600 /* FW_SEMIBOLD */,
-                0, 0, 0,
-                1 /* DEFAULT_CHARSET */,
-                0, 0, 0, 0,
-                "Segoe UI");
+            cachedFont = CreateFontW(-fontHeight, 0, 0, 0, 600 /* FW_SEMIBOLD */, 0, 0, 0, 1 /* DEFAULT_CHARSET */, 0, 0, 0, 0, "Segoe UI");
             cachedFontHeight = fontHeight;
         }
 
-        var oldFont = SelectObject(memDc, cachedFont);
+        return cachedFont;
+    }
+
+    private static int MeasurePlate(nint memDc, string text, int fontHeight, int width, float scale)
+    {
+        const int DtCalcRect = 0x00000400;
+        var oldFont = SelectObject(memDc, EnsureFont(fontHeight));
+        var rect = new RECT { left = 0, top = 0, right = width, bottom = fontHeight * 2 };
+        DrawTextW(memDc, text, text.Length, ref rect, DtSingleLine | DtCalcRect);
+        SelectObject(memDc, oldFont);
+        var padded = rect.right - rect.left + (int)Math.Round(28 * scale);
+        return Math.Clamp(padded, (int)Math.Round(60 * scale), width - (int)Math.Round(8 * scale));
+    }
+
+    private static void RenderText(nint memDc, Span<uint> pixels, int width, int height, float scale, string text, int plateWidth, int fontHeight)
+    {
+        const int DtCenter = 0x00000001;
+        var layout = OrbLayout.Scaled(scale);
+        var oldFont = SelectObject(memDc, EnsureFont(fontHeight));
         SetBkMode(memDc, 1 /* TRANSPARENT */);
-        SetTextColor(memDc, 0x00FFFFFF); // White text
+        SetTextColor(memDc, 0x00FFFFFF); // white; coverage is recovered from the color channels below
 
-        var rect = new RECT
-        {
-            left = textStartX,
-            top = 0,
-            right = textEndX,
-            bottom = height
-        };
-
-        DrawTextW(
-            memDc,
-            text,
-            text.Length,
-            ref rect,
-            DtSingleLine | DtVCenter | DtLeft | DtEndEllipsis);
-
+        var padding = (int)Math.Round(12 * scale);
+        var left = (width - plateWidth) / 2 + padding;
+        var top = (int)Math.Round(layout.CaptionCenterY - layout.CaptionHeight / 2f);
+        var rect = new RECT { left = left, top = top, right = left + plateWidth - 2 * padding, bottom = top + (int)Math.Round(layout.CaptionHeight) };
+        DrawTextW(memDc, text, text.Length, ref rect, DtSingleLine | DtVCenter | DtCenter | DtEndEllipsis);
         SelectObject(memDc, oldFont);
 
-        // Alpha channel fixup for text rendered by GDI
-        for (int y = 0; y < height; y++)
+        // GDI leaves the alpha channel alone, so any channel brighter than alpha is text coverage: lift alpha to it
+        // (premultiplied pixels must satisfy rgb <= alpha).
+        var y0 = Math.Max(0, rect.top);
+        var y1 = Math.Min(height, rect.bottom);
+        var x0 = Math.Max(0, rect.left);
+        var x1 = Math.Min(width, rect.right);
+        for (var y = y0; y < y1; y++)
         {
-            for (int x = textStartX; x < textEndX && x < width; x++)
+            for (var x = x0; x < x1; x++)
             {
-                int idx = y * width + x;
-                uint val = pixels[idx];
-                if ((val & 0x00FFFFFF) != 0 && (val >> 24) == 0)
-                {
-                    pixels[idx] = 0xFFFFFFFF;
-                }
+                var idx = y * width + x;
+                var value = pixels[idx];
+                var alpha = value >> 24;
+                var peak = Math.Max((value >> 16) & 0xFF, Math.Max((value >> 8) & 0xFF, value & 0xFF));
+                if (peak > alpha) pixels[idx] = (peak << 24) | (value & 0x00FFFFFF);
             }
         }
     }

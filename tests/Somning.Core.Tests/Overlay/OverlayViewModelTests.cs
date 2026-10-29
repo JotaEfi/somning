@@ -174,7 +174,9 @@ public sealed class OverlayViewModelTests
                 OverlayNoticeKind.CloudNoNetwork,
                 OverlayNoticeKind.CloudInvalidKey,
                 OverlayNoticeKind.CloudRateLimit,
-                OverlayNoticeKind.CloudTimeout
+                OverlayNoticeKind.CloudTimeout,
+                OverlayNoticeKind.EngineFailed,
+                OverlayNoticeKind.TranscribeTimeout
             },
             Enum.GetValues<OverlayNoticeKind>());
     }

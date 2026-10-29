@@ -123,7 +123,8 @@ public sealed class OverlayAnimationTests
 
         Assert.True(loud.Frame.Level > 0.8f);
         Assert.True(calm.Frame.Level < 0.01f);
-        Assert.True(loud.Frame.Radius > calm.Frame.Radius + 0.04f);
+        Assert.True(loud.Frame.Radius > calm.Frame.Radius + 0.02f);
+        Assert.True(loud.Frame.Elongation > calm.Frame.Elongation + 0.25f, "the drop stretches with the voice");
         Assert.True(loud.Frame.Time > calm.Frame.Time * 1.5f, "liquid flows faster while speaking");
     }
 

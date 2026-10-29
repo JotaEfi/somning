@@ -19,6 +19,8 @@ public sealed class OverlayAnimator
     private const float MaxStretch = 0.06f;   // contained squash/stretch: lively, not rubbery
 
     private readonly VoiceLevelNormalizer normalizer = new();
+    private readonly DropStretch dropStretch = new();
+    private float drive;
     private Spring scale = new(BirthScale);
     private Spring radius = new(1f);
     private Spring stretch = new(0f);
@@ -40,6 +42,17 @@ public sealed class OverlayAnimator
     private DropFrame frame = DropFrame.Static(OverlayMode.Hidden);
 
     public DropFrame Frame => frame;
+
+    /// <summary>
+    /// True when nothing is moving fast (fully shown, settled mode, quiet voice, no pop or stretch): the window may be
+    /// redrawn at a lower rate (about 30 fps) without visible judder, halving CPU use during silence, transcribing and notices.
+    /// </summary>
+    public bool IsCalm =>
+        !isHidden && isShowing && fade >= 1f && level < 0.04f && MathF.Abs(scale.Value - 1f) < 0.01f && MathF.Abs(scale.Velocity) < 0.08f
+        && MathF.Abs(morph.Value - (mode == OverlayMode.Notice ? 1f : 0f)) < 0.01f
+        && MathF.Abs(transcribeMix - (mode == OverlayMode.Transcribing ? 1f : 0f)) < 0.01f
+        && MathF.Abs(noticeMix - (mode == OverlayMode.Notice ? 1f : 0f)) < 0.01f
+        && dropStretch.Elongation is < 0.12f and > -0.05f;
 
     /// <summary>True while the window must keep being redrawn (visible or fading out).</summary>
     public bool IsActive => !isHidden;
@@ -69,6 +82,8 @@ public sealed class OverlayAnimator
             level = 0f;
             rawLevel = 0f;
             normalizer.Reset();
+            dropStretch.Reset();
+            drive = 0f;
             isHidden = false;
         }
 
@@ -121,7 +136,7 @@ public sealed class OverlayAnimator
 
     private void StepVoice(float dt)
     {
-        var drive = mode == OverlayMode.Listening && isShowing
+        drive = mode == OverlayMode.Listening && isShowing
             ? normalizer.Update(rawLevel, dt)
             : 0f;
         var previous = level;
@@ -144,15 +159,17 @@ public sealed class OverlayAnimator
         var breathPeriod = mode == OverlayMode.Transcribing ? 1.5f : 2.7f;
         var breathAmount = mode == OverlayMode.Notice ? 0f : mode == OverlayMode.Transcribing ? 0.03f : 0.02f;
         var breath = breathAmount * MathF.Sin(TwoPi * seconds / breathPeriod);
-        radius.Step(1f + breath + 0.07f * level, 22f, 0.62f, dt);
+        radius.Step(1f + breath + 0.035f * level, 22f, 0.62f, dt);
         stretch.Step(0f, 19f, 0.55f, dt);
         stretch.Value = Math.Clamp(stretch.Value, -MaxStretch, MaxStretch);
         morph.Step(mode == OverlayMode.Notice ? 1f : 0f, 13f, 0.85f, dt);
+        var idle = mode == OverlayMode.Transcribing ? 0.5f + 0.5f * MathF.Sin(TwoPi * seconds / 1.5f) : 0f;
+        dropStretch.Update(drive, idle, dt);
 
         var calm = mode == OverlayMode.Notice ? 0.25f : 1f;
-        amp2.Step(calm * (0.010f + 0.024f * level), 22f, 0.65f, dt);
-        amp3.Step(calm * (0.008f + 0.016f * level), 24f, 0.65f, dt);
-        amp4.Step(calm * (0.004f + 0.008f * level), 26f, 0.65f, dt);
+        amp2.Step(calm * (0.008f + 0.014f * level), 22f, 0.65f, dt);
+        amp3.Step(calm * (0.006f + 0.010f * level), 24f, 0.65f, dt);
+        amp4.Step(calm * (0.003f + 0.005f * level), 26f, 0.65f, dt);
 
         phase2 = Wrap(phase2 + dt * (0.9f + 2.4f * level));
         phase3 = Wrap(phase3 - dt * (1.3f + 3.0f * level));
@@ -193,6 +210,10 @@ public sealed class OverlayAnimator
             0f, -egg, // pulls the bottom out slightly: a drop rather than a perfect sphere
             a2 * MathF.Cos(phase2), a2 * MathF.Sin(phase2),
             a3 * MathF.Cos(phase3), a3 * MathF.Sin(phase3),
-            a4 * MathF.Cos(phase4), a4 * MathF.Sin(phase4));
+            a4 * MathF.Cos(phase4), a4 * MathF.Sin(phase4),
+            dropStretch.Elongation * lobeScale,
+            dropStretch.Lean * lobeScale,
+            dropStretch.Ripple * lobeScale,
+            dropStretch.RipplePhase);
     }
 }

@@ -11,6 +11,10 @@ namespace Somning.Core.Overlay;
 /// <param name="Morph">0 = round drop, 1 = wide capsule (used by the notice state).</param>
 /// <param name="TranscribeMix">0..1 weight of the calm cyan/violet palette and swirl.</param>
 /// <param name="NoticeMix">0..1 weight of the amber warning palette.</param>
+/// <param name="Elongation">Voice-driven horizontal stretch (0 = circle); width x(1+e), height x1/sqrt(1+e), constant volume.</param>
+/// <param name="Lean">Teardrop asymmetry, positive = fat end on the right.</param>
+/// <param name="Ripple">0..1 surface ripple energy from phoneme transients.</param>
+/// <param name="RipplePhase">Ripple wave phase in radians.</param>
 /// <param name="Lobe1X">Complex coefficients of the radial lobes (mode k adds a*cos(k*theta + phase)).</param>
 public readonly record struct DropFrame(
     OverlayMode Mode,
@@ -26,7 +30,11 @@ public readonly record struct DropFrame(
     float Lobe1X, float Lobe1Y,
     float Lobe2X, float Lobe2Y,
     float Lobe3X, float Lobe3Y,
-    float Lobe4X, float Lobe4Y)
+    float Lobe4X, float Lobe4Y,
+    float Elongation = 0f,
+    float Lean = 0f,
+    float Ripple = 0f,
+    float RipplePhase = 0f)
 {
     /// <summary>Neutral frame for the mode: full size, opaque, no voice, no lobes.</summary>
     public static DropFrame Static(OverlayMode mode) => new(

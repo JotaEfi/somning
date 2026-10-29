@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 04
 current_phase_name: Packaging, Autostart & Hardening
 status: executing
-stopped_at: Completed-04-05-PLAN.md
-last_updated: "2026-10-29T04:35:43.331Z"
+stopped_at: Completed 04-06-PLAN.md (DIST-01/03 pending owner confirmation)
+last_updated: "2026-10-29T17:00:18.987Z"
 last_activity: 2026-10-26
 last_activity_desc: Phase 04 execution started
 progress:
   total_phases: 4
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 28
-  completed_plans: 26
+  completed_plans: 27
 state_head: d0b19db630824a9353c3ad0d3468d1b3283404aa
 ---
 
@@ -32,7 +32,7 @@ Phase: 04 (Packaging, Autostart & Hardening) — EXECUTING
 Status: Executing Phase 04
 Last activity: 2026-10-26 — Phase 04 execution started
 
-Progress: [█████████░] 93%
+Progress: [██████████] 96%
 
 ## Accumulated Context
 
@@ -61,9 +61,14 @@ Progress: [█████████░] 93%
 | Phase 04 P03 | long | 2 tasks | 6 files |
 | Phase 04 P04 | ~25min | 2 tasks | 16 files |
 | Phase 04 P05 | 25min | 3 tasks | 6 files |
+| Phase 04 P06 | multi-session | 3 tasks | 22 files |
 
 ## Session
 
-**Last session:** 2026-10-29T04:35:43.315Z
-**Stopped at:** Completed-04-05-PLAN.md
+**Last session:** 2026-10-29T17:00:18.974Z
+**Stopped at:** Completed 04-06-PLAN.md (DIST-01/03 pending owner confirmation)
 **Resume file:** None
+
+## Decisions
+
+- [Phase 04]: 04-06: ChordTracker resynced (not zeroed) on hook reinstall; Word paste row left as known FAIL; DIST-01/03 pending owner-acceptance confirmation

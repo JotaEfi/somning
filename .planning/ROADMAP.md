@@ -101,11 +101,11 @@ Plans (all execution and verification sequential):
   2. Enabling start-with-Windows registers the HKCU Run entry and the app starts minimized to tray on logon
   3. After simulated sleep/resume and lock/unlock, and a scripted soak of many dictations, the hotkey hook still works (watchdog reinstall) and a paste-matrix report (Notepad, Chrome/Edge, VS Code, Windows Terminal, Word, elevated Notepad notice) is produced
 
-**Plans**: 5/6 plans executed
+**Plans**: 6/6 plans executed
 
 - [x] 04-04-PLAN.md
 - [x] 04-05-PLAN.md
-- [ ] 04-06-PLAN.md
+- [x] 04-06-PLAN.md
 - [x] 04-01-PLAN.md - Start-with-Windows autostart, registry HKCU & tray/settings toggle (wave 1)
 - [x] 04-02-PLAN.md - Power & session resilience (sleep/resume, lock/unlock) & hook watchdog (wave 2)
 - [x] 04-03-PLAN.md - Per-user installer, directory layout & soak/paste matrix verification (wave 3)
@@ -117,4 +117,4 @@ Plans (all execution and verification sequential):
 | 1. Dictation Loop MVP | 13/13 | Complete | 2026-10-23 |
 | 2. Overlay, Tray, Settings & Cancel | 6/6 | Complete | 2026-10-23 |
 | 3. Cloud Engine | 2/2 | Complete | 2026-10-23 |
-| 4. Packaging, Autostart & Hardening | 5/6 | In Progress|  |
+| 4. Packaging, Autostart & Hardening | 6/6 | In Progress|  |

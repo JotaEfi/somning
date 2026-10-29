@@ -38,6 +38,7 @@ public sealed class TrayIconManager : IDisposable
     private readonly WindowProcedure procedure;
     private nint hwnd;
     private nint defaultIcon;
+    private bool ownsDefaultIcon;
     private int disposed;
 
     public event Action? OpenSettingsRequested;
@@ -188,9 +189,18 @@ public sealed class TrayIconManager : IDisposable
         }
     }
 
-    private static nint LoadDefaultIcon()
+    private nint LoadDefaultIcon()
     {
-        // IDI_APPLICATION = 32512
+        var path = Environment.ProcessPath;
+        if (path is not null && ExtractIconExW(path, 0, out var large, out var small, 1) > 0)
+        {
+            if (large != 0) DestroyIcon(large);
+            if (small != 0)
+            {
+                ownsDefaultIcon = true;
+                return small;
+            }
+        }
         return LoadIconW(0, 32512);
     }
 
@@ -198,6 +208,11 @@ public sealed class TrayIconManager : IDisposable
     {
         if (Interlocked.Exchange(ref disposed, 1) != 0) return;
         RemoveTrayIcon();
+        if (ownsDefaultIcon && defaultIcon != 0)
+        {
+            DestroyIcon(defaultIcon);
+            defaultIcon = 0;
+        }
         if (hwnd != 0)
         {
             PostMessageW(hwnd, 0x0010 /* WM_CLOSE */, 0, 0);
@@ -278,6 +293,9 @@ public sealed class TrayIconManager : IDisposable
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(nint hWnd);
     [DllImport("user32.dll", EntryPoint = "PostMessageW")] private static extern bool PostMessageW(nint hWnd, uint msg, nint wParam, nint lParam);
     [DllImport("user32.dll", EntryPoint = "LoadIconW")] private static extern nint LoadIconW(nint hInstance, int lpIconName);
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)] private static extern uint ExtractIconExW(string file, int index, out nint large, out nint small, uint count);
+    [DllImport("user32.dll")] private static extern bool DestroyIcon(nint icon);
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] private static extern nint GetModuleHandle(string? moduleName);
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern ushort RegisterClassEx(in WindowClass windowClass);

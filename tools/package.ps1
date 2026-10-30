@@ -48,6 +48,7 @@ foreach ($doc in 'README.md','CHANGELOG.md','THIRD-PARTY-NOTICES.md') {
     $path = Join-Path $root $doc
     if (Test-Path -LiteralPath $path) { Copy-Item -LiteralPath $path -Destination $output -Force }
 }
+Copy-Item -LiteralPath (Join-Path $root 'LICENSE') -Destination $output -Force
 $docsOutput = Join-Path $output 'docs'
 New-Item -ItemType Directory -Path $docsOutput -Force | Out-Null
 foreach ($doc in 'PRIVACIDADE.md','INSTALACAO.md','RELEASE-1.0.md') {

@@ -15,7 +15,7 @@ Preparação local da versão 1.0.0 autorizada pelo dono. Identidade inspirada n
 ## Antes da publicação externa
 
 - Confirmar o canal de distribuição.
-- Definir titular/autor, contato de suporte e licença/termos de distribuição. Nenhum nome jurídico foi inventado.
+- Definir contato de suporte. O código é distribuído sob a licença MIT, com titular JotaEfi.
 - Conferir avisos/licenças redistribuíveis das dependências e dos modelos. `TERCEIROS.md` é o inventário inicial, não uma liberação jurídica.
 - Os binários não têm assinatura digital: o Windows SmartScreen pode exibir um aviso ao abrir o instalador ou o aplicativo baixado. Sem certificado, não anunciar binários como assinados.
 - Validar instalação em perfil ou VM limpos, sem SDK, incluindo preparação dos modelos e primeiro ditado.

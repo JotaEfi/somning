@@ -8,4 +8,5 @@ models/
 .venv/
 *.user
 .gsd/
-.planning/milestone.lock
+.planning/
+.claude/

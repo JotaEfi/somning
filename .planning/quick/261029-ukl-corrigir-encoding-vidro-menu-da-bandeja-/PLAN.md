@@ -1,1 +1,0 @@
-﻿Corrigir encoding explicitamente UTF8. Remover margem externa e reaplicar regiao apos WindowChrome/layout/DPI. Menu WPF escuro acessivel com mesmas acoes. Overlay remover queda a30fps e sincronizar com DWM. Build warnaserror, testes headless e benchmark. Preservar visual da gota.

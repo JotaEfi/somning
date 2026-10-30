@@ -2,6 +2,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $phase = Join-Path $root '.planning\phases\01-dictation-loop-mvp'
+New-Item -ItemType Directory -Path $phase -Force | Out-Null
 $reportPath = Join-Path $phase 'E2E-RESULT.md'
 $benchResults = Join-Path $phase 'bench-results.jsonl'
 $benchReport = Join-Path $phase 'BENCHMARK.md'

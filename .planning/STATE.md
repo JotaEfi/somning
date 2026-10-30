@@ -4,10 +4,10 @@ milestone: v1.0
 current_phase: 4
 status: completed
 stopped_at: Phase 4 complete — all phases complete
-last_updated: "2026-10-30T00:55:12.474Z"
+last_updated: "2026-10-30T01:02:53.232Z"
 last_activity: 2026-10-30
 last_activity_desc: Quick 261029-o9m concluida; pacote 1.0.0 gerado
-state_head: 552b8b3c0891283915c5c43585b8dc8988d104f9
+state_head: 93bcf4037efda9d367a40c89299c9ee1a68417c5
 progress:
   total_phases: 4
   completed_phases: 4
@@ -85,3 +85,4 @@ Progress: [██████████] 100%
 | 261029-vdr | Configuracoes em vidro escuro translucido e compactas (candidata, nao aprovada) | 2026-10-29 | 2acc67f | [261029-vdr-configuracoes-vidro-translucido-compactas](./quick/261029-vdr-configuracoes-vidro-translucido-compactas/) |
 | 261029-tzp | S onda oficial aprovado, S fluido preservado e pacote final Somning 1.0.0 | 2026-10-30 | 72923f4 | [261029-tzp-aplicar-logo-escolhido-pelo-dono-e-fecha](./quick/261029-tzp-aplicar-logo-escolhido-pelo-dono-e-fecha/) |
 | 261029-uez | Correcao de vidro nativo e icone ampliado; validacao visual pendente | 2026-10-30 | 552b8b3 | [261029-uez-corrigir-vidro-nativo-das-configuracoes-](./quick/261029-uez-corrigir-vidro-nativo-das-configuracoes-/) |
+| 261029-ukl | Textos UTF8, recorte externo, menu escuro e frames sincronizados; visual pendente | 2026-10-30 | 93bcf40 | [261029-ukl-corrigir-encoding-vidro-menu-da-bandeja-](./quick/261029-ukl-corrigir-encoding-vidro-menu-da-bandeja-/) |

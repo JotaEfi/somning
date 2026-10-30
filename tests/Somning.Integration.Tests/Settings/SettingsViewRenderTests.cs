@@ -1,4 +1,8 @@
-using System.Windows;
+﻿using System.Windows;
+using System.Runtime.InteropServices;
+using System.Windows.Controls;
+using System.Windows.Interop;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Somning.Core.Settings;
@@ -60,6 +64,130 @@ public sealed class SettingsViewRenderTests
         var updated = RunSta(() => new SettingsView(original, Devices, new FakeProtector()).BuildUpdated());
         Assert.Equal(original with { CloudProvider = "none" }, updated);
     }
+
+    [Fact]
+    public void ThreeCustomBindings_RoundTripWithoutChangingOtherSettings()
+    {
+        var original = new UserSettings
+        {
+            Hotkey = new(KeyModifiers.Control | KeyModifiers.Alt, "D"),
+            CancelHotkey = new(KeyModifiers.Alt, "F8"),
+            ConfirmHotkey = new(KeyModifiers.Control | KeyModifiers.Shift, "Return"),
+            CloudProvider = "none", CustomVocabulary = "Somning"
+        };
+        var updated = RunSta(() => new SettingsView(original, Devices, new FakeProtector()).BuildUpdated());
+        Assert.Equal(original, updated);
+    }
+
+    [Fact]
+    public void DuplicateBindings_CannotBeBuiltForSaving()
+    {
+        var rejected = RunSta(() =>
+        {
+            var view = new SettingsView(new UserSettings(), Devices, new FakeProtector());
+            ((Button)view.FindName("CancelHotkeyButton")).Tag = HotkeyBinding.Default;
+            return Assert.Throws<InvalidOperationException>(() => view.BuildUpdated()).Message;
+        });
+        Assert.False(string.IsNullOrWhiteSpace(rejected));
+    }
+
+    [Fact]
+    public void Header_UsesCapitalSomningAndCorrectPortugueseTitle()
+    {
+        var result = RunSta(() =>
+        {
+            var view = new SettingsView(new UserSettings(), Devices, new FakeProtector());
+            return (view.Title, ((TextBlock)view.FindName("BrandName")).Text);
+        });
+        Assert.Equal("Somning — Configurações", result.Title);
+        Assert.Equal("Somning", result.Text);
+    }
+
+    [Fact]
+    public void ShortcutRecorder_OwnsHeldSpaceAndEnterUntilMatchingKeyUp()
+    {
+        RunSta(() =>
+        {
+            foreach (var key in new[] { Key.Space, Key.Return })
+            {
+                var view = new SettingsView(new UserSettings(), Devices, new FakeProtector());
+                var button = (Button)view.FindName("ActivateHotkeyButton");
+                var saved = 0;
+                view.Saved += _ => saved++;
+                view.BeginHotkeyCapture(button, requestFocus: false);
+                Assert.True(view.ProcessHotkeyInput(key, Key.None, ModifierKeys.Alt, isDown: true));
+                var labelAfterCapture = button.Content;
+                for (var repeat = 0; repeat < 5; repeat++)
+                {
+                    Assert.True(view.ProcessHotkeyInput(key, Key.None, ModifierKeys.Alt, isDown: true));
+                    Assert.Equal(labelAfterCapture, button.Content);
+                }
+                Assert.Equal(new HotkeyBinding(KeyModifiers.Alt, key.ToString()), button.Tag);
+                Assert.True(view.ProcessHotkeyInput(key, Key.None, ModifierKeys.None, isDown: false));
+                Assert.False(view.ProcessHotkeyInput(key, Key.None, ModifierKeys.None, isDown: true));
+                Assert.Equal(0, saved);
+            }
+            return true;
+        });
+    }
+
+    [Fact]
+    public void ShortcutRecorder_NormalizesSystemKeyForRepeatAndReleaseOwnership()
+    {
+        RunSta(() =>
+        {
+            var view = new SettingsView(new UserSettings(), Devices, new FakeProtector());
+            var button = (Button)view.FindName("ActivateHotkeyButton");
+            view.BeginHotkeyCapture(button, requestFocus: false);
+            Assert.True(view.ProcessHotkeyInput(Key.System, Key.F8, ModifierKeys.Alt, isDown: true));
+            Assert.Equal(new HotkeyBinding(KeyModifiers.Alt, "F8"), button.Tag);
+            Assert.True(view.ProcessHotkeyInput(Key.System, Key.F8, ModifierKeys.Alt, isDown: true));
+            Assert.True(view.ProcessHotkeyInput(Key.System, Key.F8, ModifierKeys.None, isDown: false));
+            Assert.False(view.ProcessHotkeyInput(Key.F8, Key.None, ModifierKeys.None, isDown: false));
+            return true;
+        });
+    }
+
+    [Fact]
+    public void NativeHiddenWindow_ClipsActualHwndCorners()
+    {
+        var result = RunSta(() =>
+        {
+            var view = new SettingsView(new UserSettings(), Devices, new FakeProtector())
+            {
+                SizeToContent = SizeToContent.Manual, Width = 456, Height = 700
+            };
+            var region = CreateRectRgn(0, 0, 0, 0);
+            try
+            {
+                var hwnd = new WindowInteropHelper(view).EnsureHandle(); // Hidden: never Show/Activate.
+                var root = (FrameworkElement)view.Content;
+                root.Measure(new Size(456, 700));
+                root.Arrange(new Rect(0, 0, 456, 700));
+                root.UpdateLayout();
+                view.UseBackdropFill(acrylic: true);
+                var kind = GetWindowRgn(hwnd, region);
+                return (kind, cornerInside: PtInRegion(region, 0, 0), centerInside: PtInRegion(region, 228, 350));
+            }
+            finally
+            {
+                if (region != 0) DeleteObject(region);
+                view.Close();
+            }
+        });
+        Assert.NotEqual(0, result.kind);
+        Assert.False(result.cornerInside);
+        Assert.True(result.centerInside);
+    }
+
+    [DllImport("gdi32.dll")]
+    private static extern nint CreateRectRgn(int left, int top, int right, int bottom);
+    [DllImport("user32.dll")]
+    private static extern int GetWindowRgn(nint hwnd, nint region);
+    [DllImport("gdi32.dll")]
+    private static extern bool PtInRegion(nint region, int x, int y);
+    [DllImport("gdi32.dll")]
+    private static extern bool DeleteObject(nint region);
 
     [Fact]
     public void RenderOffscreen_WritesPreviewPng()

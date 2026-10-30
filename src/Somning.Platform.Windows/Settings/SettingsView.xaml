@@ -3,7 +3,6 @@
  Title="Somning — Configurações" Width="456" SizeToContent="Height" WindowStartupLocation="CenterScreen"
  WindowStyle="None" AllowsTransparency="False" Background="Transparent" ResizeMode="NoResize"
  Foreground="#ECEFF2" FontFamily="Segoe UI" FontSize="13" UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
- <WindowChrome.WindowChrome><WindowChrome CaptionHeight="0" ResizeBorderThickness="0" GlassFrameThickness="-1" CornerRadius="0" UseAeroCaptionButtons="False"/></WindowChrome.WindowChrome>
  <Window.Resources>
   <!-- Approved S onda brand mark; shared PNG with the executable icon artwork. -->
   <BitmapImage x:Key="BrandLogo" UriSource="pack://application:,,,/Somning.Platform.Windows;component/Branding/somning-logo.png"/>
@@ -21,7 +20,7 @@
    <GradientStop Color="#F21B1E23" Offset="0"/><GradientStop Color="#F4111316" Offset="0.45"/><GradientStop Color="#F70A0B0D" Offset="1"/>
   </LinearGradientBrush>
   <LinearGradientBrush x:Key="GlassFillAcrylic" StartPoint="0,0" EndPoint="0,1">
-   <GradientStop Color="#501B1E23" Offset="0"/><GradientStop Color="#60111316" Offset="0.45"/><GradientStop Color="#780A0B0D" Offset="1"/>
+   <GradientStop Color="#261B1E23" Offset="0"/><GradientStop Color="#2E111316" Offset="0.45"/><GradientStop Color="#390A0B0D" Offset="1"/>
   </LinearGradientBrush>
   <LinearGradientBrush x:Key="RimBrush" StartPoint="0,0" EndPoint="0,1">
    <GradientStop Color="#D9EEF1F4" Offset="0"/><GradientStop Color="#59B9C0C7" Offset="0.12"/><GradientStop Color="#26FFFFFF" Offset="0.55"/><GradientStop Color="#73C9CED4" Offset="1"/>
@@ -156,22 +155,30 @@
      <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
      <Image x:Name="BrandImage" Source="{StaticResource BrandLogo}" Width="34" Height="34" Margin="0,0,10,0" AutomationProperties.Name="Logo Somning: S onda em gota de vidro"/>
      <StackPanel Grid.Column="1" VerticalAlignment="Center">
-      <TextBlock Text="somning" FontSize="17" FontWeight="SemiBold"/>
+      <TextBlock x:Name="BrandName" Text="Somning" FontSize="17" FontWeight="SemiBold"/>
       <TextBlock Text="Configurações" FontSize="11.5" Foreground="{StaticResource Muted}" Margin="0,-1,0,0"/>
      </StackPanel>
-     <Border Grid.Column="2" BorderBrush="#4D5CE1E6" BorderThickness="1" CornerRadius="9" Padding="8,1" VerticalAlignment="Center" Margin="0,0,10,0"><TextBlock Text="1.0" Foreground="{StaticResource Accent}" FontSize="11"/></Border>
+     <Border Grid.Column="2" BorderBrush="#4D5CE1E6" BorderThickness="1" CornerRadius="9" Padding="8,1" VerticalAlignment="Center" Margin="0,0,10,0"><TextBlock x:Name="VersionText" Text="1.0.1" Foreground="{StaticResource Accent}" FontSize="11"/></Border>
      <Button x:Name="CloseButton" Grid.Column="3" Style="{StaticResource CloseButton}" ToolTip="Fechar (Esc)" AutomationProperties.Name="Fechar" IsTabStop="False" Cursor="Hand"/>
     </Grid>
 
-    <Border Grid.Row="1" Style="{StaticResource Panel}">
-     <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-      <StackPanel VerticalAlignment="Center"><TextBlock Text="Atalho de voz" FontWeight="SemiBold"/><TextBlock Text="Segure para falar, toque para alternar. Fixo nesta versão." FontSize="11.5" Foreground="{StaticResource Muted}" Margin="0,2,10,0"/></StackPanel>
-      <Border Grid.Column="1" Background="#73000000" BorderBrush="#40FFFFFF" BorderThickness="1" CornerRadius="8" Padding="10,5" VerticalAlignment="Center">
-       <TextBlock x:Name="HotkeyText" Text="Ctrl + Shift + Espaço" FontSize="12" FontFamily="Segoe UI Semibold" Foreground="{StaticResource Accent}" TextWrapping="NoWrap" AutomationProperties.Name="Atalho atual"/>
-      </Border>
-     </Grid>
+    <Border Grid.Row="1" Style="{StaticResource Panel}" Padding="12,8">
+     <StackPanel>
+      <TextBlock Text="ATALHOS" Style="{StaticResource SectionCaption}" Margin="0,0,0,6"/>
+      <Grid>
+       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="224"/></Grid.ColumnDefinitions>
+       <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+       <TextBlock Text="Ativar voz" VerticalAlignment="Center"/>
+       <Button x:Name="ActivateHotkeyButton" Grid.Column="1" Height="30" Margin="0,0,0,4" Padding="8,0" FontSize="11.5" Foreground="{StaticResource Accent}" AutomationProperties.Name="Alterar atalho para ativar voz" ToolTip="Clique e pressione a combinação desejada"/>
+       <TextBlock Grid.Row="1" Text="Cancelar" VerticalAlignment="Center"/>
+       <Button x:Name="CancelHotkeyButton" Grid.Row="1" Grid.Column="1" Height="30" Margin="0,0,0,4" Padding="8,0" FontSize="11.5" Foreground="{StaticResource Accent}" AutomationProperties.Name="Alterar atalho para cancelar" ToolTip="Clique e pressione a combinação desejada"/>
+       <TextBlock Grid.Row="2" Text="Confirmar" VerticalAlignment="Center"/>
+       <Button x:Name="ConfirmHotkeyButton" Grid.Row="2" Grid.Column="1" Height="30" Padding="8,0" FontSize="11.5" Foreground="{StaticResource Accent}" AutomationProperties.Name="Alterar atalho para confirmar" ToolTip="Clique e pressione a combinação desejada"/>
+      </Grid>
+      <TextBlock x:Name="HotkeyHint" Text="Clique para alterar. Ativar: segure ou toque. Confirmar: encerrar e transcrever." FontSize="10.5" Foreground="{StaticResource Muted}" Margin="0,6,0,0"/>
+      <TextBlock x:Name="HotkeyValidation" Text="" FontSize="11" Foreground="#FFCAA0" Margin="0,4,0,0" Visibility="Collapsed" AutomationProperties.LiveSetting="Polite"/>
+     </StackPanel>
     </Border>
-
     <StackPanel Grid.Row="2" Margin="0,0,0,12">
      <TextBlock Text="ENTRADA" Style="{StaticResource SectionCaption}"/>
      <Label Content="_Microfone" Target="{Binding ElementName=DeviceCombo}"/>

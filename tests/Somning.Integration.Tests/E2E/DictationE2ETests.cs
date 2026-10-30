@@ -52,6 +52,7 @@ public sealed class DictationE2ETests
         var p95 = sorted[(int)Math.Ceiling(.95 * sorted.Length) - 1];
         var evidence = new { selected = EngineDefaults.Backend + "-" + EngineDefaults.ModelFile + "-fa=" + EngineDefaults.FlashAttention, samples_ms = measurements, p50_ms = p50, p95_ms = p95, budget_ms = EngineDefaults.BudgetP95StopToPasteMs, backend, measured_at_utc = DateTimeOffset.UtcNow };
         var evidencePath = Path.Combine(RepoPaths.Root, ".planning", "phases", "01-dictation-loop-mvp", "01-12-latency.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(evidencePath)!);
         await File.WriteAllTextAsync(evidencePath, JsonSerializer.Serialize(evidence, new JsonSerializerOptions { WriteIndented = true }), TestContext.Current.CancellationToken);
         Console.WriteLine(JsonSerializer.Serialize(evidence));
         Assert.True(p95 <= EngineDefaults.BudgetP95StopToPasteMs,

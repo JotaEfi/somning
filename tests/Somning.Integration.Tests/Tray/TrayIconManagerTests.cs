@@ -48,4 +48,14 @@ public sealed class TrayIconManagerTests
         Assert.Equal(5, attempts);
         Assert.Equal(4, waits);
     }
+    [Fact]
+    public void MenuLifetime_RejectsRepeatedOpensUntilClosed()
+    {
+        using var tray = new TrayIconManager();
+        Assert.True(tray.TryAcquireMenu());
+        for (var click = 0; click < 10; click++) Assert.False(tray.TryAcquireMenu());
+        tray.ReleaseMenu();
+        Assert.True(tray.TryAcquireMenu());
+        tray.ReleaseMenu();
+    }
 }

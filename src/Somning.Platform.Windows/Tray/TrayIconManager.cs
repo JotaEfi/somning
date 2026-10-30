@@ -40,6 +40,10 @@ public sealed class TrayIconManager : IDisposable
     private nint defaultIcon;
     private bool ownsDefaultIcon;
     private int disposed;
+    private int menuOpen;
+    private System.Windows.Threading.Dispatcher? menuDispatcher;
+    internal bool TryAcquireMenu() => Interlocked.CompareExchange(ref menuOpen, 1, 0) == 0;
+    internal void ReleaseMenu() => Volatile.Write(ref menuOpen, 0);
     private readonly string initialTooltip;
     private uint taskbarCreatedMessage;
     private volatile bool isRegistered;
@@ -167,6 +171,7 @@ public sealed class TrayIconManager : IDisposable
     }
     private nint WindowProc(nint window, uint message, nint wParam, nint lParam)
     {
+        if (message == 0x0010) { PostQuitMessage(0); return 0; }
         if (taskbarCreatedMessage != 0 && message == taskbarCreatedMessage)
         {
             if (!AddTrayIcon(initialTooltip)) Trace.TraceWarning("Could not restore Somning tray icon after Explorer restart.");
@@ -187,8 +192,14 @@ public sealed class TrayIconManager : IDisposable
 
     private void ShowContextMenu()
     {
+        if (Volatile.Read(ref disposed) != 0 || !TryAcquireMenu()) return;
         var popupThread = new Thread(() =>
         {
+            var dispatcher = System.Windows.Threading.Dispatcher.CurrentDispatcher;
+            Volatile.Write(ref menuDispatcher, dispatcher);
+            try
+            {
+            if (Volatile.Read(ref disposed) != 0) return;
             var menu = new System.Windows.Controls.ContextMenu
             {
                 Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(24, 28, 33)),
@@ -199,6 +210,7 @@ public sealed class TrayIconManager : IDisposable
                 FontFamily = new System.Windows.Media.FontFamily("Segoe UI"),
                 FontSize = 13,
                 MinWidth = 220,
+                StaysOpen = false,
                 Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint
             };
             var menuStyle = (System.Windows.Style)System.Windows.Markup.XamlReader.Parse("""
@@ -250,7 +262,7 @@ public sealed class TrayIconManager : IDisposable
                     Header = label, IsEnabled = enabled, Style = itemStyle,
                     Padding = new System.Windows.Thickness(12, 8, 12, 8)
                 };
-                item.Click += (_, _) => action();
+                item.Click += (_, _) => { menu.IsOpen = false; action(); };
                 menu.Items.Add(item);
             }
             Add("_Configurações…", () => OpenSettingsRequested?.Invoke());
@@ -258,13 +270,37 @@ public sealed class TrayIconManager : IDisposable
             Add("Abrir pasta de _logs", () => OpenLogsRequested?.Invoke());
             menu.Items.Add(new System.Windows.Controls.Separator { Style = separatorStyle });
             Add("_Sair", () => ExitRequested?.Invoke());
-            SetForegroundWindow(hwnd);
+            menu.Opened += (_, _) =>
+            {
+                if (System.Windows.PresentationSource.FromVisual(menu) is System.Windows.Interop.HwndSource source)
+                {
+                    source.AddHook((nint window, int message, nint wparam, nint lparam, ref bool handled) =>
+                    {
+                        if (message == 0x0006 && ((long)wparam & 0xFFFF) == 0) menu.IsOpen = false;
+                        return 0;
+                    });
+                    SetForegroundWindow(source.Handle);
+                }
+                menu.Focus();
+            };
+            menu.PreviewKeyDown += (_, e) =>
+            {
+                if (e.Key == System.Windows.Input.Key.Escape) { menu.IsOpen = false; e.Handled = true; }
+            };
             menu.Closed += (_, _) => System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvokeShutdown(System.Windows.Threading.DispatcherPriority.Background);
             menu.IsOpen = true;
             System.Windows.Threading.Dispatcher.Run();
+            }
+            catch (Exception ex) { Trace.TraceWarning("Tray menu failed: {0}", ex); }
+            finally
+            {
+                if (!dispatcher.HasShutdownStarted) dispatcher.InvokeShutdown();
+                Volatile.Write(ref menuDispatcher, null);
+                ReleaseMenu();
+            }
         }) { IsBackground = true, Name = "Somning.Tray.Menu" };
         popupThread.SetApartmentState(ApartmentState.STA);
-        popupThread.Start();
+        try { popupThread.Start(); } catch { ReleaseMenu(); throw; }
     }
     private nint LoadDefaultIcon()
     {
@@ -284,10 +320,11 @@ public sealed class TrayIconManager : IDisposable
     public void Dispose()
     {
         if (Interlocked.Exchange(ref disposed, 1) != 0) return;
+        Volatile.Read(ref menuDispatcher)?.BeginInvokeShutdown(System.Windows.Threading.DispatcherPriority.Send);
         if (hwnd != 0)
         {
             PostMessageW(hwnd, 0x0010 /* WM_CLOSE */, 0, 0);
-            PostMessageW(hwnd, 0x0012 /* WM_QUIT */, 0, 0);
+
             if (Thread.CurrentThread != thread)
                 thread.Join(TimeSpan.FromSeconds(2));
         }
@@ -357,6 +394,7 @@ public sealed class TrayIconManager : IDisposable
     private static extern bool Shell_NotifyIcon(uint dwMessage, ref NOTIFYICONDATA lpData);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern uint RegisterWindowMessageW(string message);
+    [DllImport("user32.dll")] private static extern void PostQuitMessage(int code);
     [DllImport("user32.dll")] private static extern bool DestroyWindow(nint window);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern bool UnregisterClassW(string name, nint instance);
     [DllImport("user32.dll")] private static extern nint CreatePopupMenu();

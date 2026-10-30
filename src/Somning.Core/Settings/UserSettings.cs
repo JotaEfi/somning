@@ -3,6 +3,8 @@ namespace Somning.Core.Settings;
 public sealed record UserSettings
 {
     public HotkeyBinding Hotkey { get; init; } = HotkeyBinding.Default;
+    public HotkeyBinding CancelHotkey { get; init; } = new(KeyModifiers.None, "Escape");
+    public HotkeyBinding ConfirmHotkey { get; init; } = new(KeyModifiers.Control, "Enter");
     public string? MicrophoneDeviceId { get; init; }
     public string EngineBackend { get; init; } = "vulkan";
     public string CloudProvider { get; init; } = "none";

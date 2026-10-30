@@ -10,6 +10,8 @@ public sealed class SettingsViewModel
         AvailableDevices = availableDevices ?? [];
         SelectedDeviceId = CurrentSettings.MicrophoneDeviceId;
         Hotkey = CurrentSettings.Hotkey;
+        CancelHotkey = CurrentSettings.CancelHotkey;
+        ConfirmHotkey = CurrentSettings.ConfirmHotkey;
         AutoPaste = CurrentSettings.AutoPaste;
         PlaySoundCues = CurrentSettings.PlaySoundCues;
         StartWithWindows = CurrentSettings.StartWithWindows;
@@ -23,6 +25,8 @@ public sealed class SettingsViewModel
     public IReadOnlyList<string> AvailableDevices { get; }
     public string? SelectedDeviceId { get; set; }
     public HotkeyBinding Hotkey { get; set; }
+    public HotkeyBinding CancelHotkey { get; set; }
+    public HotkeyBinding ConfirmHotkey { get; set; }
     public string? ConflictWarning { get; private set; }
     public bool AutoPaste { get; set; }
     public bool PlaySoundCues { get; set; }
@@ -48,6 +52,8 @@ public sealed class SettingsViewModel
         return CurrentSettings with
         {
             Hotkey = Hotkey,
+            CancelHotkey = CancelHotkey,
+            ConfirmHotkey = ConfirmHotkey,
             MicrophoneDeviceId = SelectedDeviceId,
             AutoPaste = AutoPaste,
             PlaySoundCues = PlaySoundCues,

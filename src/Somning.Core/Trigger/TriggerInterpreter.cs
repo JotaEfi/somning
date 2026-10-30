@@ -89,6 +89,15 @@ public sealed class TriggerInterpreter
 
                 return new TriggerResult(TriggerCommand.None, Mode);
 
+            case KeyEventKind.Confirm:
+                if (!IsRecording) return new TriggerResult(TriggerCommand.None, Mode);
+                var confirmedMode = Mode == TriggerMode.Unknown ? TriggerMode.Hold : Mode;
+                IsRecording = false;
+                Mode = TriggerMode.Unknown;
+                isKeyDown = false;
+                modifiersUpSince = null;
+                return new TriggerResult(TriggerCommand.StopRecording, confirmedMode, StopReason.Tap);
+
             case KeyEventKind.Cancel:
                 IsRecording = false;
                 Mode = TriggerMode.Unknown;

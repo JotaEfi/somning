@@ -1,6 +1,7 @@
 using System.Threading.Channels;
 using System.Runtime.InteropServices;
 using Somning.Core.Trigger;
+using Somning.Core.Settings;
 using Somning.Platform.Windows.Input;
 using Windows.Win32;
 using Windows.Win32.Foundation;
@@ -23,6 +24,10 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
     private Thread? thread;
     private uint threadId;
     private ChordTracker tracker;
+    private ChordTracker cancelTracker;
+    private ChordTracker confirmTracker;
+    private UserSettings hotkeys = new();
+    private UserSettings? activeHotkeys;
     private uint targetLayoutThreadId;
     private nint targetLayoutWindow;
     private nint layoutBeforeChord;
@@ -31,6 +36,23 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
 
     /// <summary>HOTK-04: Predicate returning whether dictation recording is actively in progress.</summary>
     public Func<bool>? IsRecordingActive { get; set; }
+    public Func<bool>? ShouldIgnoreHotkeys { get; set; }
+
+    public void ConfigureHotkeys(UserSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (!HotkeyBindings.TryValidate(settings, out var error)) throw new ArgumentException(error, nameof(settings));
+        Volatile.Write(ref hotkeys, settings);
+    }
+
+    public bool AreActivationModifiersDown()
+    {
+        var binding = (Volatile.Read(ref activeHotkeys) ?? Volatile.Read(ref hotkeys)).Hotkey;
+        var required = binding.Modifiers;
+        if (required == KeyModifiers.None)
+            return HotkeyBindings.TryGetVirtualKey(binding, out var key) && KeyDown((int)key);
+        return (PhysicalModifiers() & required) == required;
+    }
 
     // Indicates local installation state; Windows can silently remove a low-level hook.
     public bool IsHookActive => Volatile.Read(ref hookActive) != 0;
@@ -101,8 +123,13 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
                         if (hook.IsInvalid) throw new InvalidOperationException("Unable to reinstall keyboard hook.");
                         hookHandle = hook.DangerousGetHandle();
                         // Keep the chord state (do not zero it) but correct it against the physical keys: see ChordTracker.Resync.
-                        if (tracker.Resync(KeyDown(0x11), KeyDown(0x10), KeyDown(0x20)))
+                        if (tracker.ResyncPhysical(KeyDown))
+                        {
+                            Volatile.Write(ref activeHotkeys, null);
                             sink.TryWrite(new KeyEvent(KeyEventKind.TriggerUp, Environment.TickCount64, false));
+                        }
+                        cancelTracker.ResyncPhysical(KeyDown);
+                        confirmTracker.ResyncPhysical(KeyDown);
                         _ = Interlocked.Increment(ref installCount);
                         _ = Interlocked.Increment(ref reinstallCompletedCount);
                         Volatile.Write(ref hookActive, 1);
@@ -147,10 +174,47 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
             return PInvoke.CallNextHookEx((HHOOK)default, code, wparam, lparam);
         bool down = wparam.Value is 0x100 or 0x104;
         bool up = wparam.Value is 0x101 or 0x105;
-        if ((down || up) && tracker.Process(data->vkCode, down, out var kind))
+        var bindings = Volatile.Read(ref hotkeys);
+        var enabled = ShouldIgnoreHotkeys?.Invoke() != true;
+        var recording = IsRecordingActive?.Invoke() == true;
+        var triggerHandled = false;
+        var cancelHandled = false;
+        var confirmHandled = false;
+        var kind = default(KeyEventKind);
+        var cancelKind = default(KeyEventKind);
+        var confirmKind = default(KeyEventKind);
+        if (down || up)
+        {
+            // In hold mode, the activation chord's modifiers are still physically held when
+            // pressing Esc or a separate confirmation chord. Prefer exact action matches first.
+            var active = Volatile.Read(ref activeHotkeys);
+            var tolerated = tracker.OwnedKey != 0 ? (active ?? bindings).Hotkey.Modifiers : KeyModifiers.None;
+            var cancelExact = cancelTracker.CanStart(data->vkCode, bindings.CancelHotkey);
+            var confirmExact = confirmTracker.CanStart(data->vkCode, bindings.ConfirmHotkey);
+            var allowCancel = cancelTracker.CanStart(data->vkCode, bindings.CancelHotkey, tolerated);
+            var allowConfirm = confirmTracker.CanStart(data->vkCode, bindings.ConfirmHotkey, tolerated);
+            if (allowCancel && allowConfirm)
+            {
+                if (confirmExact && !cancelExact) allowCancel = false;
+                else if (cancelExact && !confirmExact) allowConfirm = false;
+                else if (System.Numerics.BitOperations.PopCount((uint)bindings.ConfirmHotkey.Modifiers) >
+                         System.Numerics.BitOperations.PopCount((uint)bindings.CancelHotkey.Modifiers)) allowCancel = false;
+                else allowConfirm = false;
+            }
+            triggerHandled = tracker.Process(data->vkCode, down, bindings.Hotkey,
+                enabled && cancelTracker.OwnedKey != data->vkCode && confirmTracker.OwnedKey != data->vkCode, out kind);
+            cancelHandled = cancelTracker.Process(data->vkCode, down, bindings.CancelHotkey,
+                enabled && recording && allowCancel && tracker.OwnedKey != data->vkCode && confirmTracker.OwnedKey != data->vkCode,
+                out cancelKind, tolerated);
+            confirmHandled = confirmTracker.Process(data->vkCode, down, bindings.ConfirmHotkey,
+                enabled && recording && allowConfirm && tracker.OwnedKey != data->vkCode && cancelTracker.OwnedKey != data->vkCode,
+                out confirmKind, tolerated);
+        }
+        if (triggerHandled)
         {
             if (kind == KeyEventKind.TriggerDown)
             {
+                Volatile.Write(ref activeHotkeys, bindings);
                 var foreground = GetForegroundWindow();
                 targetLayoutWindow = foreground;
                 targetLayoutThreadId = foreground == 0 ? 0 : GetWindowThreadProcessId(foreground, out _);
@@ -158,14 +222,19 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
             }
             sink.TryWrite(new KeyEvent(kind, Environment.TickCount64, data->dwExtraInfo == InputMarkers.Test));
             if (kind == KeyEventKind.TriggerUp)
+            {
+                Volatile.Write(ref activeHotkeys, null);
                 _ = PInvoke.PostThreadMessage(threadId, LayoutRestoreMessage, default, default);
+            }
             return new LRESULT(1);
         }
 
-        // HOTK-04: Pressing Esc (VK_ESCAPE = 0x1B) while recording cancels it immediately
-        if (down && data->vkCode == 0x1B && IsRecordingActive?.Invoke() == true)
+        if (cancelHandled || confirmHandled)
         {
-            sink.TryWrite(new KeyEvent(KeyEventKind.Cancel, Environment.TickCount64, data->dwExtraInfo == InputMarkers.Test));
+            if (cancelHandled && cancelKind == KeyEventKind.TriggerDown)
+                sink.TryWrite(new KeyEvent(KeyEventKind.Cancel, Environment.TickCount64, data->dwExtraInfo == InputMarkers.Test));
+            else if (confirmHandled && confirmKind == KeyEventKind.TriggerDown)
+                sink.TryWrite(new KeyEvent(KeyEventKind.Confirm, Environment.TickCount64, data->dwExtraInfo == InputMarkers.Test));
             return new LRESULT(1);
         }
 
@@ -197,6 +266,9 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
     }
 
     private static bool KeyDown(int virtualKey) => (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
+    private static KeyModifiers PhysicalModifiers() =>
+        (KeyDown(0x11) ? KeyModifiers.Control : 0) | (KeyDown(0x10) ? KeyModifiers.Shift : 0) |
+        (KeyDown(0x12) ? KeyModifiers.Alt : 0) | (KeyDown(0x5B) || KeyDown(0x5C) ? KeyModifiers.Windows : 0);
     [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int virtualKey);
 
     private const uint WmInputLangChangeRequest = 0x0050;

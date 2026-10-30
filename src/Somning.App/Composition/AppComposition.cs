@@ -59,6 +59,12 @@ public sealed class AppComposition : IAsyncDisposable
         PowerListener = powerListener ?? TryCreatePowerListener();
         SettingsStore = settingsStore ?? new JsonSettingsStore();
         Settings = SettingsStore.LoadAsync().GetAwaiter().GetResult();
+        if (!HotkeyBindings.TryValidate(Settings, out var hotkeyError))
+        {
+            Log.Warning("Invalid saved shortcuts; restored shortcut defaults: {Reason}", hotkeyError);
+            var defaults = new UserSettings();
+            Settings = Settings with { Hotkey = defaults.Hotkey, CancelHotkey = defaults.CancelHotkey, ConfirmHotkey = defaults.ConfirmHotkey };
+        }
         AutoPasteEnabled = Settings.AutoPaste;
         SoundPlayer.Enabled = Settings.PlaySoundCues;
         if (DynamicAudioFactory is not null && !string.IsNullOrEmpty(Settings.MicrophoneDeviceId))
@@ -75,10 +81,12 @@ public sealed class AppComposition : IAsyncDisposable
         paster = new TargetPaster(clipboard, probe, integrity, new ModifierWaiter(), new PasteInjector());
         Sidecars = new SidecarStore(SomningPaths.RecordingsDir);
         Hook = new KeyboardHook(keys.Writer);
+        Hook.ConfigureHotkeys(Settings);
+        Hook.ShouldIgnoreHotkeys = () => SettingsWindow?.IsOpen == true;
         // Pre-hook snapshot (H9): paths/IDs only; repair, model wait and inference all happen later in RecoveryService.
         Snapshot = RecoverySnapshot.Take(SomningPaths.RecordingsDir);
         // Live captures run normally while admission is pending; only transcription/copy dispatch waits (D-05, D-11).
-        Host = new DictationHost(PhysicalKeyState.AreChordModifiersDown, idTaken: IdTaken,
+        Host = new DictationHost(Hook.AreActivationModifiersDown, idTaken: IdTaken,
             initialState: DictationState.Initial with { RecoveryAdmissionPending = true });
         Hook.IsRecordingActive = () => Host.State.Capture is not null;
         hookWatchdog = new HookLivenessWatchdog(new HookLivenessProbe(Hook), new HookLivenessPolicy(),
@@ -145,6 +153,7 @@ public sealed class AppComposition : IAsyncDisposable
     /// </summary>
     public void ApplySettings(UserSettings updated)
     {
+        Hook.ConfigureHotkeys(updated);
         Settings = updated;
         _ = SettingsStore.SaveAsync(updated);
         AutoPasteEnabled = updated.AutoPaste;

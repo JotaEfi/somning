@@ -1,0 +1,1 @@
+﻿Corrigir incompatibilidade entre janela WPF layered e acrilico nativo usando WindowChrome e HWND normal. Aplicar recorte depois do layout, reduzir opacidade combinada. Recortar margens transparentes apenas nas exportacoes ICO; preservar PNG aprovado. Build warnaserror, Core e Settings headless; revisar, regenerar pacote e relancar sem tomar foco.

@@ -1,4 +1,4 @@
-﻿# Instalação do Somning 1.0.1
+﻿# Instalação do Somning 1.0.2
 
 ## Requisitos
 
@@ -6,7 +6,7 @@ Windows 10 x64, microfone funcional e espaço para o programa e modelos. O model
 
 ## Instalador Setup.exe
 
-Baixe `Somning-1.0.1-Setup.exe` na [release mais recente](https://github.com/JotaEfi/somning/releases/latest). O assistente instala por usuário em `%LOCALAPPDATA%\Somning\app`, cria atalhos e registra o desinstalador. Os modelos e dados pessoais ficam fora da pasta do programa e são preservados na desinstalação. Após instalar, execute **Somning - Baixar modelos** no Menu Iniciar. O instalador não tem assinatura digital.
+Baixe `Somning-1.0.2-Setup.exe` na [release mais recente](https://github.com/JotaEfi/somning/releases/latest). O assistente instala por usuário em `%LOCALAPPDATA%\Somning\app`, cria atalhos e registra o desinstalador. Os modelos e dados pessoais ficam fora da pasta do programa e são preservados na desinstalação. Durante a instalação, o Setup baixa e verifica automaticamente os modelos q5, q8 e VAD (aproximadamente 1,45 GB). É necessário ter internet e espaço livre; se falhar, a instalação informa o erro e pode ser executada novamente. O instalador não tem assinatura digital.
 
 ## Pacote ZIP alternativo
 
@@ -22,10 +22,10 @@ O destino padrão é `%LOCALAPPDATA%\Somning\app`, com atalho no Menu Iniciar. A
 
 ## Modelos para o processamento local
 
-Antes do primeiro ditado, prepare os modelos (atalho: dê dois cliques em `Baixar-modelos.cmd`). O download (~0,6 GB) requer internet e verifica os hashes SHA-256 definidos no script. Execute na pasta extraída:
+Antes do primeiro ditado, prepare os modelos (atalho: dê dois cliques em `Baixar-modelos.cmd`). O download (aproximadamente 1,45 GB para os três modelos) requer internet e verifica os hashes SHA-256 definidos no script. Execute na pasta extraída:
 
 ```powershell
-powershell -NoProfile -File .\fetch-models.ps1 -Only 'ggml-large-v3-turbo-q5_0.bin,ggml-silero-v6.2.0.bin'
+powershell -NoProfile -File .\fetch-models.ps1 -Only 'ggml-large-v3-turbo-q5_0.bin,ggml-large-v3-turbo-q8_0.bin,ggml-silero-v6.2.0.bin'
 ```
 
 Os arquivos ficam em `%LOCALAPPDATA%\Somning\models`. O modelo q8 de fallback CPU pode ser preparado com `-Only 'ggml-large-v3-turbo-q8_0.bin'` quando necessário. Após preparar os modelos, o ditado local funciona sem enviar gravações a um provedor de transcrição.

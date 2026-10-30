@@ -57,12 +57,18 @@ foreach ($doc in 'PRIVACIDADE.md','INSTALACAO.md','RELEASE-1.0.md') {
 }
 @'
 @echo off
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0fetch-models.ps1" -Only ggml-large-v3-turbo-q5_0.bin,ggml-large-v3-turbo-q8_0.bin,ggml-silero-v6.2.0.bin
+if errorlevel 1 (
+  echo Falha ao baixar ou verificar os modelos. Confira a internet e tente novamente.
+  pause
+  exit /b 1
+)
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1" -LaunchAfterInstall
 pause
 '@ | Set-Content -LiteralPath (Join-Path $output 'Instalar.cmd') -Encoding ASCII
 @'
 @echo off
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0fetch-models.ps1" -Only ggml-large-v3-turbo-q5_0.bin,ggml-silero-v6.2.0.bin
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0fetch-models.ps1" -Only ggml-large-v3-turbo-q5_0.bin,ggml-large-v3-turbo-q8_0.bin,ggml-silero-v6.2.0.bin
 pause
 '@ | Set-Content -LiteralPath (Join-Path $output 'Baixar-modelos.cmd') -Encoding ASCII
 $appExe = Join-Path $output 'Somning.App.exe'

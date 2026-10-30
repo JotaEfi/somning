@@ -1,5 +1,10 @@
 ﻿# Histórico de versões
 
+## 1.0.2 — modelos durante a instalação
+
+- Setup baixa e verifica automaticamente os modelos q5, q8 para CPU e VAD antes de instalar.
+- Falhas de rede ou verificação interrompem a preparação com orientações para tentar novamente.
+
 ## 1.0.1 — atalhos configuráveis e polimento (2026-10-30)
 
 - Combinações independentes para ativar o ditado, cancelar e confirmar a gravação, com validação e atualização ao salvar.

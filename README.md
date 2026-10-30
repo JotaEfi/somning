@@ -5,7 +5,7 @@
 ![Somning — Sua voz. Seu texto. Ditado em português, direto no Windows.](docs/images/hero.svg)
 
 <p align="center">
-  <strong>Windows 10 x64 · Português do Brasil · Whisper local · Protótipo 1.0.1</strong>
+  <strong>Windows 10 x64 · Português do Brasil · Whisper local · Protótipo 1.0.2</strong>
 </p>
 
 <p align="center">
@@ -17,9 +17,9 @@
 
 O **Somning** transforma sua fala em texto no campo em que você está trabalhando. Segure **Ctrl + Shift + Espaço**, fale e solte. A transcrição fica na área de transferência e pode ser colada automaticamente no aplicativo ativo.
 
-O processamento local usa **Whisper**, em um processo separado. Depois de baixar os modelos, você pode ditar offline. **Groq** e **OpenAI** são opções de nuvem ativadas por você, com sua própria chave.
+O processamento local usa **Whisper**, em um processo separado. O instalador baixa os modelos automaticamente; depois da instalação, você pode ditar offline. **Groq** e **OpenAI** são opções de nuvem ativadas por você, com sua própria chave.
 
-> **Versão 1.0.1 do protótipo.** O fluxo de ditado está implementado; aparência nativa, compatibilidade entre aplicativos e fluidez em monitores de alta frequência continuam em validação. Veja as [limitações conhecidas](docs/RELEASE-1.0.md).
+> **Versão 1.0.2 do protótipo.** O fluxo de ditado está implementado; aparência nativa, compatibilidade entre aplicativos e fluidez em monitores de alta frequência continuam em validação. Veja as [limitações conhecidas](docs/RELEASE-1.0.md).
 
 ## Como funciona
 
@@ -57,13 +57,13 @@ O aplicativo permanece na **bandeja do Windows**. O menu dá acesso às configur
 
 **Requisitos:** Windows 10 x64, microfone e espaço para o aplicativo e os modelos. O modelo principal ocupa aproximadamente 574 MB. O pacote inclui o runtime .NET; o uso do aplicativo não exige o SDK.
 
-Baixe **Somning-1.0.1-Setup.exe** na [release mais recente](https://github.com/JotaEfi/somning/releases/latest) e siga o assistente. A instalação é por usuário e inclui desinstalador. Os modelos são baixados separadamente pelo atalho **Somning - Baixar modelos** no Menu Iniciar. O código-fonte também está disponível em um ZIP separado na mesma release.
+Baixe **Somning-1.0.2-Setup.exe** na [release mais recente](https://github.com/JotaEfi/somning/releases/latest) e siga o assistente. A instalação é por usuário e inclui desinstalador. Os modelos são baixados e verificados automaticamente durante a instalação (aproximadamente 1,45 GB); é necessário acesso à internet. O código-fonte também está disponível em um ZIP separado na mesma release.
 
 Se preferir o pacote ZIP do aplicativo:
 
 1. Extraia todo o conteúdo, preservando a pasta `engine`.
-2. Execute **`Instalar.cmd`** para instalar por usuário.
-3. Execute **`Baixar-modelos.cmd`** e aguarde a preparação dos modelos.
+2. Execute **`Instalar.cmd`**; ele baixa os modelos e instala por usuário.
+3. Aguarde o download e a verificação dos modelos.
 4. Abra **Somning** no Menu Iniciar e faça seu primeiro ditado.
 
 Os binários ainda não têm assinatura digital. Os detalhes de instalação, atualização e remoção estão no [guia de instalação](docs/INSTALACAO.md).
@@ -110,7 +110,7 @@ powershell -NoProfile -File tools/package.ps1
 
 Para gerar o Setup.exe, instale Inno Setup 6 e execute `powershell -NoProfile -File tools/setup.ps1` após o empacotamento.
 
-Saída: `publish/Somning-1.0.1-win-x64.zip`, com checksum `.sha256` ao lado. Modelos não são incluídos. Não distribua builds Debug nem pacotes com `-WithHarness`.
+Saída: `publish/Somning-1.0.2-win-x64.zip`, com checksum `.sha256` ao lado. Modelos não são incluídos. Não distribua builds Debug nem pacotes com `-WithHarness`.
 
 **Testes de integração:** alguns usam foco, teclado e desktop real. Execute esses casos apenas em uma sessão dedicada; não rode toda a suíte enquanto usa o computador.
 

@@ -40,6 +40,10 @@ public sealed class TrayIconManager : IDisposable
     private nint defaultIcon;
     private bool ownsDefaultIcon;
     private int disposed;
+    private readonly string initialTooltip;
+    private uint taskbarCreatedMessage;
+    private volatile bool isRegistered;
+    public bool IsRegistered => isRegistered;
 
     public event Action? OpenSettingsRequested;
     public event Action? RepasteLastRequested;
@@ -50,14 +54,13 @@ public sealed class TrayIconManager : IDisposable
 
     public TrayIconManager(string initialTooltip = "Somning - Ditado por Voz")
     {
+        this.initialTooltip = initialTooltip;
         procedure = WindowProc;
         thread = new Thread(Run) { IsBackground = true, Name = "Somning.Tray" };
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
 
         hwnd = ready.Task.WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
-        defaultIcon = LoadDefaultIcon();
-        AddTrayIcon(initialTooltip);
     }
 
     public void UpdateTooltip(string tooltip)
@@ -69,15 +72,25 @@ public sealed class TrayIconManager : IDisposable
         _ = Shell_NotifyIcon(NimModify, ref data);
     }
 
-    private void AddTrayIcon(string tooltip)
+    internal static bool RegisterWithRetry(Func<bool> register, Action wait)
+    {
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            if (register()) return true;
+            if (attempt < 4) wait();
+        }
+        return false;
+    }
+
+    private bool AddTrayIcon(string tooltip)
     {
         var data = CreateNotifyData();
         data.uFlags = NifMessage | NifIcon | NifTip;
         data.uCallbackMessage = WmTrayCallback;
         data.hIcon = defaultIcon;
         data.szTip = tooltip.Length > 127 ? tooltip[..127] : tooltip;
-        if (!Shell_NotifyIcon(NimAdd, ref data))
-            Trace.TraceWarning("Shell_NotifyIcon(NIM_ADD) returned false.");
+        isRegistered = RegisterWithRetry(() => Shell_NotifyIcon(NimAdd, ref data), () => Thread.Sleep(250));
+        return isRegistered;
     }
 
     private void RemoveTrayIcon()
@@ -85,6 +98,7 @@ public sealed class TrayIconManager : IDisposable
         if (hwnd == 0) return;
         var data = CreateNotifyData();
         _ = Shell_NotifyIcon(NimDelete, ref data);
+        isRegistered = false;
     }
 
     private NOTIFYICONDATA CreateNotifyData()
@@ -115,24 +129,49 @@ public sealed class TrayIconManager : IDisposable
             return;
         }
 
-        var createdHwnd = CreateWindowEx(0, className, "", 0, 0, 0, 0, 0, -3, 0, instance, 0);
+        var createdHwnd = CreateWindowEx(0, className, "", 0, 0, 0, 0, 0, 0, 0, instance, 0);
         if (createdHwnd == 0)
         {
             ready.TrySetException(new Win32Exception());
             return;
         }
 
-        ready.TrySetResult(createdHwnd);
-
-        while (GetMessage(out var msg, 0, 0, 0) > 0)
+        hwnd = createdHwnd;
+        try
         {
-            TranslateMessage(in msg);
-            DispatchMessage(in msg);
+            taskbarCreatedMessage = RegisterWindowMessageW("TaskbarCreated");
+            defaultIcon = LoadDefaultIcon();
+            if (!AddTrayIcon(initialTooltip))
+            {
+                ready.TrySetException(new InvalidOperationException("Windows refused the Somning tray icon after five attempts."));
+                return;
+            }
+            ready.TrySetResult(createdHwnd);
+            while (GetMessage(out var msg, 0, 0, 0) > 0)
+            {
+                TranslateMessage(in msg);
+                DispatchMessage(in msg);
+            }
+        }
+        catch (Exception ex) { ready.TrySetException(ex); }
+        finally
+        {
+            RemoveTrayIcon();
+            if (ownsDefaultIcon && defaultIcon != 0) DestroyIcon(defaultIcon);
+            defaultIcon = 0;
+            ownsDefaultIcon = false;
+            DestroyWindow(createdHwnd);
+            hwnd = 0;
+            UnregisterClassW(className, instance);
         }
     }
-
     private nint WindowProc(nint window, uint message, nint wParam, nint lParam)
     {
+        if (taskbarCreatedMessage != 0 && message == taskbarCreatedMessage)
+        {
+            if (!AddTrayIcon(initialTooltip)) Trace.TraceWarning("Could not restore Somning tray icon after Explorer restart.");
+            return 0;
+        }
         if (message == WmTrayCallback)
         {
             var mouseEvent = (int)lParam;
@@ -245,12 +284,6 @@ public sealed class TrayIconManager : IDisposable
     public void Dispose()
     {
         if (Interlocked.Exchange(ref disposed, 1) != 0) return;
-        RemoveTrayIcon();
-        if (ownsDefaultIcon && defaultIcon != 0)
-        {
-            DestroyIcon(defaultIcon);
-            defaultIcon = 0;
-        }
         if (hwnd != 0)
         {
             PostMessageW(hwnd, 0x0010 /* WM_CLOSE */, 0, 0);
@@ -323,6 +356,9 @@ public sealed class TrayIconManager : IDisposable
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
     private static extern bool Shell_NotifyIcon(uint dwMessage, ref NOTIFYICONDATA lpData);
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern uint RegisterWindowMessageW(string message);
+    [DllImport("user32.dll")] private static extern bool DestroyWindow(nint window);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern bool UnregisterClassW(string name, nint instance);
     [DllImport("user32.dll")] private static extern nint CreatePopupMenu();
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern bool AppendMenuW(nint hMenu, uint uFlags, nint uIDNewItem, string lpNewItem);
     [DllImport("user32.dll")] private static extern bool DestroyMenu(nint hMenu);

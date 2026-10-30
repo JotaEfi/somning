@@ -1,4 +1,4 @@
-using Somning.Platform.Windows.Tray;
+﻿using Somning.Platform.Windows.Tray;
 using Xunit;
 
 namespace Somning.Integration.Tests.Tray;
@@ -10,6 +10,7 @@ public sealed class TrayIconManagerTests
     {
         using var tray = new TrayIconManager("Somning Test Tooltip");
         Assert.NotNull(tray);
+        Assert.True(tray.IsRegistered);
 
         tray.UpdateTooltip("Novo Tooltip");
     }
@@ -27,5 +28,24 @@ public sealed class TrayIconManagerTests
 
         canRepaste = true;
         Assert.True(tray.CanRepaste());
+    }
+    [Fact]
+    public void Registration_RetriesTransientShellFailure()
+    {
+        var attempts = 0;
+        var waits = 0;
+        Assert.True(TrayIconManager.RegisterWithRetry(() => ++attempts == 3, () => waits++));
+        Assert.Equal(3, attempts);
+        Assert.Equal(2, waits);
+    }
+
+    [Fact]
+    public void Registration_PermanentFailureIsBoundedAndReported()
+    {
+        var attempts = 0;
+        var waits = 0;
+        Assert.False(TrayIconManager.RegisterWithRetry(() => { attempts++; return false; }, () => waits++));
+        Assert.Equal(5, attempts);
+        Assert.Equal(4, waits);
     }
 }

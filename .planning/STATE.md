@@ -4,10 +4,10 @@ milestone: v1.0
 current_phase: 4
 status: completed
 stopped_at: Phase 4 complete — all phases complete
-last_updated: "2026-10-30T01:43:48.669Z"
+last_updated: "2026-10-30T18:02:38.648Z"
 last_activity: 2026-10-30
 last_activity_desc: Quick 261029-o9m concluida; pacote 1.0.0 gerado
-state_head: 518b7d5abd8b6ef0a97eaa76745e951c7d9f444a
+state_head: 622bf6386ef6291c913220d8602e707f69b95640
 progress:
   total_phases: 4
   completed_phases: 4
@@ -89,3 +89,4 @@ Progress: [██████████] 100%
 | 261029-up0 | Template proprio do menu sem gutter branco e scroll | 2026-10-30 | 1eb5a61 | [261029-up0-corrigir-template-do-menu-da-bandeja-sem](./quick/261029-up0-corrigir-template-do-menu-da-bandeja-sem/) |
 | 261029-v36 | Prototipo1.0 publico no GitHub com README ilustrado | 2026-10-30 | 2286f6a | [261029-v36-preparar-prototipo-1-0-e-criar-repositor](./quick/261029-v36-preparar-prototipo-1-0-e-criar-repositor/) |
 | 261029-vi8 | Setup.exe instalavel, source separado e prerelease1.0 | 2026-10-30 | 518b7d5 | [261029-vi8-criar-setup-exe-e-publicar-prerelease-pr](./quick/261029-vi8-criar-setup-exe-e-publicar-prerelease-pr/) |
+| 261030-kqe | Registro robusto da bandeja e menu unico; validacao desktop pendente | 2026-10-30 | 622bf63 | [261030-kqe-corrigir-inicializacao-instalada-sem-ban](./quick/261030-kqe-corrigir-inicializacao-instalada-sem-ban/) |

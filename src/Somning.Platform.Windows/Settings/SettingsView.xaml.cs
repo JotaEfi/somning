@@ -1,5 +1,6 @@
-using System.Windows;
-using System.Windows.Media.Imaging;
+﻿using System.Windows;
+using System.Windows.Input;
+using System.Windows.Media;
 using Somning.Core.Settings;
 using Somning.Platform.Windows.Audio;
 
@@ -25,12 +26,50 @@ public partial class SettingsView : Window
         original = settings;
         this.devices = devices;
         this.protector = protector;
-        BrandImage.Source = new BitmapImage(new Uri("pack://application:,,,/Somning.Platform.Windows;component/Branding/somning-logo.png"));
+        UseBackdropFill(acrylic: false);
         Populate();
         ProviderCombo.SelectionChanged += (_, _) => UpdateProviderHint();
         SaveButton.Click += (_, _) => { Saved?.Invoke(BuildUpdated()); Close(); };
         CancelButton.Click += (_, _) => Close();
+        CloseButton.Click += (_, _) => Close();
+        Header.MouseLeftButtonDown += (_, e) => { if (e.ButtonState == MouseButtonState.Pressed) DragMove(); };
+        Glass.SizeChanged += (_, _) => UpdateGlassGeometry();
+        SourceInitialized += (_, _) => UseBackdropFill(GlassBackdrop.TryEnable(this));
+        DpiChanged += (_, _) => UpdateGlassGeometry();
         UpdateProviderHint();
+    }
+
+    /// <summary>Glass radius shared by the XAML layers, clips and the window region.</summary>
+    private const double GlassRadius = 22;
+
+    private bool isAcrylic;
+
+    /// <summary>
+    /// Switches between the real-blur fill (more transparent, region-clipped, no drop shadow since the region
+    /// would cut it) and the semi-opaque fallback fill with a soft outer shadow. Public for off-screen previews.
+    /// </summary>
+    public void UseBackdropFill(bool acrylic)
+    {
+        isAcrylic = acrylic;
+        Resources["GlassFill"] = Resources[acrylic ? "GlassFillAcrylic" : "GlassFillSolid"];
+        ShadowHost.Visibility = acrylic ? Visibility.Collapsed : Visibility.Visible;
+        UpdateGlassGeometry();
+    }
+
+    private void UpdateGlassGeometry()
+    {
+        var w = Glass.ActualWidth;
+        var h = Glass.ActualHeight;
+        if (w <= 0 || h <= 0) return;
+        var glass = new RectangleGeometry(new Rect(0, 0, w, h), GlassRadius, GlassRadius);
+        InnerShadowHost.Clip = glass;
+        // Shadow only outside the glass so the translucent body is not darkened from below.
+        ShadowHost.Clip = new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(new Rect(-60, -60, w + 120, h + 120)), glass);
+        if (isAcrylic)
+        {
+            var origin = Glass.TranslatePoint(new Point(0, 0), this);
+            GlassBackdrop.ClipToRoundedRect(this, new Rect(origin, new Size(w, h)), GlassRadius);
+        }
     }
 
     private void Populate()

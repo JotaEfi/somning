@@ -2,7 +2,7 @@
 
 ## Estado
 
-Preparação local da versão 1.0.0 autorizada pelo dono. Identidade inspirada na gota aprovada em 29/10/2026. Os binários e documentos são preparados localmente; a publicação externa ainda não foi feita.
+Preparação local da versão 1.0.0 autorizada pelo dono. Identidade inspirada na gota aprovada em 29/10/2026. Código do protótipo autorizado para publicação pública em github.com/JotaEfi/somning. Os pacotes binários continuam sendo preparados localmente.
 
 ## Conteúdo esperado do pacote
 

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="560" viewBox="0 0 1440 560">
+<defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#080D14"/><stop offset="1" stop-color="#172B35"/></linearGradient><radialGradient id="glass" cx=".3" cy=".2" r=".85"><stop stop-color="#687078" stop-opacity=".6"/><stop offset=".6" stop-color="#171E25" stop-opacity=".5"/><stop offset="1" stop-color="#A5BBC0" stop-opacity=".8"/></radialGradient><linearGradient id="rim" x2=".8" y2="1"><stop stop-color="#E0E7EB"/><stop offset=".5" stop-color="#425059"/><stop offset="1" stop-color="#B6D4D6"/></linearGradient><filter id="blur"><feGaussianBlur stdDeviation="38"/></filter></defs>
+<rect width="1440" height="560" rx="24" fill="url(#bg)"/>
+<ellipse cx="1190" cy="360" rx="220" ry="120" fill="#257A86" opacity=".15" filter="url(#blur)"/>
+<g font-family="Segoe UI,Arial,sans-serif"><rect x="88" y="72" width="206" height="34" rx="17" fill="#182C34" stroke="#37525B"/><text x="108" y="95" fill="#8EE5E6" font-size="15" letter-spacing="2">PROTÓTIPO / 1.0</text>
+<text x="84" y="225" fill="#F2F5F7" font-size="104" font-weight="600" letter-spacing="-5">somning</text>
+<text x="89" y="292" fill="#D6DFE4" font-size="35">Sua voz. Seu texto.</text><text x="89" y="338" fill="#92A6B3" font-size="24">Ditado em português, direto no Windows.</text>
+<rect x="89" y="401" width="330" height="55" rx="12" fill="#19262E" stroke="#43545F"/><text x="116" y="437" fill="#8EE5E6" font-size="23">Ctrl + Shift + Espaço</text><text x="443" y="437" fill="#9BAFB9" font-size="18">Segure. Fale. Solte.</text></g>
+<circle cx="1110" cy="265" r="177" fill="url(#glass)" stroke="url(#rim)" stroke-width="2"/>
+<path d="M 949 278 C 1004 278 1004 221 1054 252 S 1126 323 1170 275 S 1237 262 1270 248" fill="none" stroke="#060C12" stroke-width="30" opacity=".85"/>
+<path d="M 951 263 C 1001 263 1018 231 1054 252 S 1129 302 1170 275 S 1235 259 1269 248" fill="none" stroke="#84979F" stroke-width="2" opacity=".55"/>
+<ellipse cx="1025" cy="155" rx="40" ry="12" transform="rotate(-35 1025 155)" fill="#F3F6F8" opacity=".88"/><circle cx="1200" cy="375" r="7" fill="#EEF8F9" opacity=".8"/>
+</svg>

@@ -9,6 +9,7 @@ $culture = [Globalization.CultureInfo]::InvariantCulture
 $utf8 = New-Object Text.UTF8Encoding($false)
 $root = Split-Path $PSScriptRoot -Parent
 $report = Join-Path $root '.planning\phases\01-dictation-loop-mvp\GATE-RESULT.md'
+New-Item -ItemType Directory -Path (Split-Path $report -Parent) -Force | Out-Null
 $rows = New-Object 'Collections.Generic.List[string]'
 $appSection = @()
 $failed = $false

@@ -128,4 +128,4 @@ O logo oficial é **S onda**. A alternativa **S fluido** está preservada para u
 
 As dependências e seus avisos estão em [Componentes de terceiros](docs/TERCEIROS.md).
 
-**Ainda não há licença aberta definida para este código.** A disponibilização pública permite consultar o protótipo, mas não concede uma licença aberta por inferência. As licenças dos componentes de terceiros continuam aplicáveis.
+O código do Somning é distribuído sob a [licença MIT](LICENSE). As licenças dos componentes de terceiros continuam aplicáveis.

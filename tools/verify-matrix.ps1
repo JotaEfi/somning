@@ -19,6 +19,7 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $utf8 = New-Object Text.UTF8Encoding($false)
 $phaseDir = Join-Path $root '.planning\phases\04-packaging-autostart-hardening'
+New-Item -ItemType Directory -Path $phaseDir -Force | Out-Null
 $reportPath = Join-Path $phaseDir 'PASTE-MATRIX.md'
 $soakReportPath = Join-Path $phaseDir 'SOAK-REPORT.json'
 $integrationExe = Join-Path $root 'tests\Somning.Integration.Tests\bin\Debug\net10.0-windows\Somning.Integration.Tests.exe'

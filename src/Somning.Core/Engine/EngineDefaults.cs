@@ -1,6 +1,5 @@
 namespace Somning.Core.Engine;
 
-// Selected default from .planning/phases/01-dictation-loop-mvp/BENCHMARK.md
 public static class EngineDefaults
 {
     public const string Backend = "vulkan", ModelFile = "ggml-large-v3-turbo-q5_0.bin",

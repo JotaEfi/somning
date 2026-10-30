@@ -1,6 +1,6 @@
-# Histórico de versões
+﻿# Histórico de versões
 
-## 1.0.0 — preparação da publicação inicial
+## 1.0.0 — protótipo inicial (2026-10-29)
 
 - Ditado local em pt-BR com Whisper, atalho global com modos segurar/alternar e processamento em processo separado.
 - Texto na área de transferência e colagem automática configurável.
@@ -10,4 +10,4 @@
 - Identidade da gota, ícones e nova apresentação das configurações.
 - Pacote Windows x64 com runtime, scripts de instalação/desinstalação e documentação de primeiro uso e privacidade.
 
-Os artefatos são preparados localmente antes da publicação externa. A data pública e o canal de distribuição ainda precisam ser confirmados. Veja `docs/RELEASE-1.0.md` para limitações e verificações pendentes.
+Primeira versão do protótipo. A aparência nativa e a fluidez em monitores de alta frequência seguem em validação com o dono. Os pacotes são preparados localmente. Veja `docs/RELEASE-1.0.md` para limitações e verificações pendentes.

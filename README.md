@@ -2,7 +2,7 @@
 
 Ditado por voz em português do Brasil para Windows. Pressione o atalho, fale e leve o texto ao aplicativo em que você está trabalhando.
 
-Versão **1.0.0**, Windows 10 x64. A interface e a marca seguem a gota de vidro do indicador de voz: grafite, ondas e acentos ciano.
+Versão **1.0.0 — protótipo**, Windows 10 x64. A interface e a marca seguem a gota de vidro do indicador de voz: grafite, ondas e acentos ciano.
 
 ## Usar
 

@@ -1,0 +1,1 @@
+﻿Preparar documentacao como prototipo1.0, preservar historico e configuracoes locais sem commitar state/config. Verificar arquivos e autenticacao. Criar JotaEfi/somning na visibilidade escolhida pelo dono, publicar branch principal e tag v1.0.0. Nao publicar release binaria sem pedido.

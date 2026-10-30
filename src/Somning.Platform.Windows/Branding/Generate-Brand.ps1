@@ -1,4 +1,4 @@
-# Export the approved S onda artwork without redrawing or changing its appearance.
+﻿# Export the approved S onda artwork without redrawing or changing its appearance.
 param([string]$OutputDirectory = $PSScriptRoot)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -19,6 +19,19 @@ try {
     $svg = '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><title>Somning - S onda</title><image width="512" height="512" href="data:image/png;base64,' + $encoded + '"/></svg>'
     [System.IO.File]::WriteAllText((Join-Path $OutputDirectory 'somning-logo.svg'), $svg, [System.Text.UTF8Encoding]::new($false))
 
+    # Tight alpha bounds enlarge the mark in shell icons without changing the approved PNG.
+    $left = $source.Width; $top = $source.Height; $right = 0; $bottom = 0
+    for ($y = 0; $y -lt $source.Height; $y++) {
+        for ($x = 0; $x -lt $source.Width; $x++) {
+            if ($source.GetPixel($x, $y).A -gt 24) {
+                $left = [Math]::Min($left, $x); $top = [Math]::Min($top, $y)
+                $right = [Math]::Max($right, $x); $bottom = [Math]::Max($bottom, $y)
+            }
+        }
+    }
+    $edge = [Math]::Max($right - $left + 1, $bottom - $top + 1) + 8
+    $cropX = [int][Math]::Floor(($left + $right + 1 - $edge) / 2.0)
+    $cropY = [int][Math]::Floor(($top + $bottom + 1 - $edge) / 2.0)
     foreach ($size in $sizes) {
         $bitmap = [System.Drawing.Bitmap]::new($size, $size, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
         $graphics = $null
@@ -33,7 +46,7 @@ try {
             $attributes = [System.Drawing.Imaging.ImageAttributes]::new()
             $attributes.SetWrapMode([System.Drawing.Drawing2D.WrapMode]::TileFlipXY)
             $target = [System.Drawing.Rectangle]::new(0, 0, $size, $size)
-            $graphics.DrawImage($source, $target, 0, 0, $source.Width, $source.Height, [System.Drawing.GraphicsUnit]::Pixel, $attributes)
+            $graphics.DrawImage($source, $target, $cropX, $cropY, $edge, $edge, [System.Drawing.GraphicsUnit]::Pixel, $attributes)
             $stream = [System.IO.MemoryStream]::new()
             $bitmap.Save($stream, [System.Drawing.Imaging.ImageFormat]::Png)
             $payloads += ,$stream.ToArray()
@@ -59,3 +72,4 @@ try {
     }
     foreach ($payload in $payloads) { $writer.Write([byte[]]$payload) }
 } finally { $writer.Dispose(); $icoStream.Dispose() }
+

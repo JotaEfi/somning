@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
 
@@ -15,8 +15,8 @@ internal static class GlassBackdrop
     private const int AccentEnableAcrylicBlurBehind = 4;
     private const int AccentDisabled = 0;
 
-    /// <summary>Tint in AABBGGRR: near-black graphite at ~70% so the WPF glass layers stay in charge of colour.</summary>
-    private const uint DarkTint = 0xB30B0A09;
+    /// <summary>Tint in AABBGGRR: near-black graphite at ~40% so the WPF glass layers stay in charge of colour.</summary>
+    private const uint DarkTint = 0x660B0A09;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct AccentPolicy
@@ -103,3 +103,4 @@ internal static class GlassBackdrop
         }
     }
 }
+

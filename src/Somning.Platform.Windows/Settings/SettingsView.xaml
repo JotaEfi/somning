@@ -1,8 +1,9 @@
-<Window x:Class="Somning.Platform.Windows.Settings.SettingsView"
+﻿<Window x:Class="Somning.Platform.Windows.Settings.SettingsView"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
- Title="Somning — Configurações" Width="456" SizeToContent="Height" WindowStartupLocation="CenterScreen"
- WindowStyle="None" AllowsTransparency="True" Background="Transparent" ResizeMode="NoResize"
+ Title="Somning â€” ConfiguraÃ§Ãµes" Width="456" SizeToContent="Height" WindowStartupLocation="CenterScreen"
+ WindowStyle="None" AllowsTransparency="False" Background="Transparent" ResizeMode="NoResize"
  Foreground="#ECEFF2" FontFamily="Segoe UI" FontSize="13" UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
+ <WindowChrome.WindowChrome><WindowChrome CaptionHeight="0" ResizeBorderThickness="0" GlassFrameThickness="-1" CornerRadius="0" UseAeroCaptionButtons="False"/></WindowChrome.WindowChrome>
  <Window.Resources>
   <!-- Approved S onda brand mark; shared PNG with the executable icon artwork. -->
   <BitmapImage x:Key="BrandLogo" UriSource="pack://application:,,,/Somning.Platform.Windows;component/Branding/somning-logo.png"/>
@@ -20,7 +21,7 @@
    <GradientStop Color="#F21B1E23" Offset="0"/><GradientStop Color="#F4111316" Offset="0.45"/><GradientStop Color="#F70A0B0D" Offset="1"/>
   </LinearGradientBrush>
   <LinearGradientBrush x:Key="GlassFillAcrylic" StartPoint="0,0" EndPoint="0,1">
-   <GradientStop Color="#C21B1E23" Offset="0"/><GradientStop Color="#CC111316" Offset="0.45"/><GradientStop Color="#DB0A0B0D" Offset="1"/>
+   <GradientStop Color="#501B1E23" Offset="0"/><GradientStop Color="#60111316" Offset="0.45"/><GradientStop Color="#780A0B0D" Offset="1"/>
   </LinearGradientBrush>
   <LinearGradientBrush x:Key="RimBrush" StartPoint="0,0" EndPoint="0,1">
    <GradientStop Color="#D9EEF1F4" Offset="0"/><GradientStop Color="#59B9C0C7" Offset="0.12"/><GradientStop Color="#26FFFFFF" Offset="0.55"/><GradientStop Color="#73C9CED4" Offset="1"/>
@@ -62,7 +63,7 @@
    </ControlTemplate></ToggleButton.Template></ToggleButton>
    <Border x:Name="FocusRim" BorderThickness="1" CornerRadius="9" BorderBrush="Transparent" IsHitTestVisible="False"/>
    <ContentPresenter IsHitTestVisible="False" Margin="11,0,34,0" VerticalAlignment="Center" Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"/>
-   <Popup Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" VerticalOffset="4" AllowsTransparency="True" Focusable="False" PopupAnimation="Fade">
+   <Popup Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" VerticalOffset="4" AllowsTransparency="False" Focusable="False" PopupAnimation="Fade">
     <Border MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}" MaxHeight="240" Background="#F5131518" BorderBrush="#4DC9CED4" BorderThickness="1" CornerRadius="10" Padding="0,4" Margin="0,0,8,8">
      <Border.Effect><DropShadowEffect BlurRadius="16" ShadowDepth="4" Opacity="0.55" Color="Black"/></Border.Effect>
      <ScrollViewer VerticalScrollBarVisibility="Auto"><ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/></ScrollViewer>
@@ -156,7 +157,7 @@
      <Image x:Name="BrandImage" Source="{StaticResource BrandLogo}" Width="34" Height="34" Margin="0,0,10,0" AutomationProperties.Name="Logo Somning: S onda em gota de vidro"/>
      <StackPanel Grid.Column="1" VerticalAlignment="Center">
       <TextBlock Text="somning" FontSize="17" FontWeight="SemiBold"/>
-      <TextBlock Text="Configurações" FontSize="11.5" Foreground="{StaticResource Muted}" Margin="0,-1,0,0"/>
+      <TextBlock Text="ConfiguraÃ§Ãµes" FontSize="11.5" Foreground="{StaticResource Muted}" Margin="0,-1,0,0"/>
      </StackPanel>
      <Border Grid.Column="2" BorderBrush="#4D5CE1E6" BorderThickness="1" CornerRadius="9" Padding="8,1" VerticalAlignment="Center" Margin="0,0,10,0"><TextBlock Text="1.0" Foreground="{StaticResource Accent}" FontSize="11"/></Border>
      <Button x:Name="CloseButton" Grid.Column="3" Style="{StaticResource CloseButton}" ToolTip="Fechar (Esc)" AutomationProperties.Name="Fechar" IsTabStop="False" Cursor="Hand"/>
@@ -164,9 +165,9 @@
 
     <Border Grid.Row="1" Style="{StaticResource Panel}">
      <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-      <StackPanel VerticalAlignment="Center"><TextBlock Text="Atalho de voz" FontWeight="SemiBold"/><TextBlock Text="Segure para falar, toque para alternar. Fixo nesta versão." FontSize="11.5" Foreground="{StaticResource Muted}" Margin="0,2,10,0"/></StackPanel>
+      <StackPanel VerticalAlignment="Center"><TextBlock Text="Atalho de voz" FontWeight="SemiBold"/><TextBlock Text="Segure para falar, toque para alternar. Fixo nesta versÃ£o." FontSize="11.5" Foreground="{StaticResource Muted}" Margin="0,2,10,0"/></StackPanel>
       <Border Grid.Column="1" Background="#73000000" BorderBrush="#40FFFFFF" BorderThickness="1" CornerRadius="8" Padding="10,5" VerticalAlignment="Center">
-       <TextBlock x:Name="HotkeyText" Text="Ctrl + Shift + Espaço" FontSize="12" FontFamily="Segoe UI Semibold" Foreground="{StaticResource Accent}" TextWrapping="NoWrap" AutomationProperties.Name="Atalho atual"/>
+       <TextBlock x:Name="HotkeyText" Text="Ctrl + Shift + EspaÃ§o" FontSize="12" FontFamily="Segoe UI Semibold" Foreground="{StaticResource Accent}" TextWrapping="NoWrap" AutomationProperties.Name="Atalho atual"/>
       </Border>
      </Grid>
     </Border>
@@ -178,17 +179,17 @@
     </StackPanel>
 
     <StackPanel Grid.Row="3" Margin="0,0,0,12">
-     <TextBlock Text="TRANSCRIÇÃO" Style="{StaticResource SectionCaption}"/>
+     <TextBlock Text="TRANSCRIÃ‡ÃƒO" Style="{StaticResource SectionCaption}"/>
      <Grid>
       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
       <StackPanel><Label Content="_Processamento" Target="{Binding ElementName=ProviderCombo}"/>
-       <ComboBox x:Name="ProviderCombo" AutomationProperties.Name="Provedor de transcrição"><ComboBoxItem Content="Local · Whisper"/><ComboBoxItem Content="Nuvem · Groq"/><ComboBoxItem Content="Nuvem · OpenAI"/></ComboBox></StackPanel>
+       <ComboBox x:Name="ProviderCombo" AutomationProperties.Name="Provedor de transcriÃ§Ã£o"><ComboBoxItem Content="Local Â· Whisper"/><ComboBoxItem Content="Nuvem Â· Groq"/><ComboBoxItem Content="Nuvem Â· OpenAI"/></ComboBox></StackPanel>
       <StackPanel Grid.Column="2"><Label Content="C_have de API" Target="{Binding ElementName=ApiKeyBox}"/><PasswordBox x:Name="ApiKeyBox" AutomationProperties.Name="Chave de API do provedor"/></StackPanel>
      </Grid>
      <TextBlock x:Name="ProviderHint" Style="{StaticResource Hint}" Margin="2,6,0,10"/>
-     <Label Content="_Vocabulário personalizado" Target="{Binding ElementName=VocabularyBox}"/>
-     <TextBox x:Name="VocabularyBox" AutomationProperties.Name="Vocabulário personalizado"/>
-     <TextBlock Text="Nomes e termos que você usa, separados por vírgulas." Style="{StaticResource Hint}"/>
+     <Label Content="_VocabulÃ¡rio personalizado" Target="{Binding ElementName=VocabularyBox}"/>
+     <TextBox x:Name="VocabularyBox" AutomationProperties.Name="VocabulÃ¡rio personalizado"/>
+     <TextBlock Text="Nomes e termos que vocÃª usa, separados por vÃ­rgulas." Style="{StaticResource Hint}"/>
     </StackPanel>
 
     <StackPanel Grid.Row="4" Margin="0,0,0,16">
@@ -197,7 +198,7 @@
       <StackPanel>
        <CheckBox x:Name="AutoPasteCheck" Content="_Colar automaticamente no aplicativo ativo" AutomationProperties.Name="Colar automaticamente no aplicativo ativo"/>
        <Rectangle Height="1" Fill="#14FFFFFF"/>
-       <CheckBox x:Name="SoundCuesCheck" Content="Sons de _início e término" AutomationProperties.Name="Sons de início e término"/>
+       <CheckBox x:Name="SoundCuesCheck" Content="Sons de _inÃ­cio e tÃ©rmino" AutomationProperties.Name="Sons de inÃ­cio e tÃ©rmino"/>
        <Rectangle Height="1" Fill="#14FFFFFF"/>
        <CheckBox x:Name="StartWithWindowsCheck" Content="Iniciar com o _Windows" AutomationProperties.Name="Iniciar com o Windows"/>
       </StackPanel>
@@ -205,7 +206,7 @@
     </StackPanel>
 
     <Grid Grid.Row="5"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-     <TextBlock x:Name="SaveHint" Text="Enter salva · Esc fecha" Foreground="{StaticResource Caption}" VerticalAlignment="Center" FontSize="11.5"/>
+     <TextBlock x:Name="SaveHint" Text="Enter salva Â· Esc fecha" Foreground="{StaticResource Caption}" VerticalAlignment="Center" FontSize="11.5"/>
      <Button x:Name="CancelButton" Grid.Column="1" Content="_Cancelar" IsCancel="True" Margin="0,0,8,0"/>
      <Button x:Name="SaveButton" Grid.Column="2" Content="_Salvar" IsDefault="True" Style="{StaticResource PrimaryButton}" Padding="20,0"/>
     </Grid>
@@ -213,3 +214,4 @@
   </Grid>
  </Grid>
 </Window>
+

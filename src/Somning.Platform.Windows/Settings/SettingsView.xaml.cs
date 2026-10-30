@@ -35,6 +35,7 @@ public partial class SettingsView : Window
         Header.MouseLeftButtonDown += (_, e) => { if (e.ButtonState == MouseButtonState.Pressed) DragMove(); };
         Glass.SizeChanged += (_, _) => UpdateGlassGeometry();
         SourceInitialized += (_, _) => UseBackdropFill(GlassBackdrop.TryEnable(this));
+        ContentRendered += (_, _) => UpdateGlassGeometry();
         DpiChanged += (_, _) => UpdateGlassGeometry();
         UpdateProviderHint();
     }
@@ -130,3 +131,4 @@ public partial class SettingsView : Window
         };
     }
 }
+

@@ -82,3 +82,4 @@ Progress: [██████████] 100%
 | 261029-nr6 | Vidro neutro com ondas de voz, lente e legenda translucida | 2026-10-29 | 3237d64 | [261029-nr6-vidro-neutro-com-ondas-de-voz-e-refracao](./quick/261029-nr6-vidro-neutro-com-ondas-de-voz-e-refracao/) |
 | 261029-o9m | Identidade da gota, configuracoes WPF, logo e pacote 1.0.0 | 2026-10-29 | 55579f5 | [261029-o9m-identidade-visual-e-configuracoes-somnin](./quick/261029-o9m-identidade-visual-e-configuracoes-somnin/) |
 | 261029-goo | Entrada viscosa da gota (gosma saindo da borda) e legenda 30% menor | 2026-10-29 | 931a36c | [261029-goo-entrada-viscosa-e-legenda-menor](./quick/261029-goo-entrada-viscosa-e-legenda-menor/) |
+| 261029-vdr | Configuracoes em vidro escuro translucido e compactas (candidata, nao aprovada) | 2026-10-29 | 2acc67f | [261029-vdr-configuracoes-vidro-translucido-compactas](./quick/261029-vdr-configuracoes-vidro-translucido-compactas/) |

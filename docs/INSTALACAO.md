@@ -1,4 +1,4 @@
-﻿# Instalação do Somning 1.0
+﻿# Instalação do Somning 1.0.1
 
 ## Requisitos
 
@@ -6,7 +6,7 @@ Windows 10 x64, microfone funcional e espaço para o programa e modelos. O model
 
 ## Instalador Setup.exe
 
-Baixe `Somning-1.0.0-Setup.exe` na [Release 1.0](https://github.com/JotaEfi/somning/releases/tag/v1.0.0-prototype.1). O assistente instala por usuário em `%LOCALAPPDATA%\Somning\app`, cria atalhos e registra o desinstalador. Os modelos e dados pessoais ficam fora da pasta do programa e são preservados na desinstalação. Após instalar, execute **Somning - Baixar modelos** no Menu Iniciar. O instalador não tem assinatura digital.
+Baixe `Somning-1.0.1-Setup.exe` na [release mais recente](https://github.com/JotaEfi/somning/releases/latest). O assistente instala por usuário em `%LOCALAPPDATA%\Somning\app`, cria atalhos e registra o desinstalador. Os modelos e dados pessoais ficam fora da pasta do programa e são preservados na desinstalação. Após instalar, execute **Somning - Baixar modelos** no Menu Iniciar. O instalador não tem assinatura digital.
 
 ## Pacote ZIP alternativo
 

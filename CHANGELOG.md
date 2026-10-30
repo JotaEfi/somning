@@ -1,5 +1,13 @@
 ﻿# Histórico de versões
 
+## 1.0.1 — atalhos configuráveis e polimento (2026-10-30)
+
+- Combinações independentes para ativar o ditado, cancelar e confirmar a gravação, com validação e atualização ao salvar.
+- Confirmar encerra a captura atual para transcrever; cancelar descarta a gravação. Padrões: Ctrl+Shift+Espaço, Esc e Ctrl+Enter.
+- Configurações com recorte nativo arredondado, vidro aproximadamente 40% mais transparente e título Somning.
+- Registro da bandeja com novas tentativas e recuperação após reinício do Explorer.
+- Menu da bandeja limitado a uma instância, com fechamento por ação, Esc e perda de ativação.
+- Instalador por usuário, ZIP do aplicativo, código-fonte separado e SHA256 na release Latest.
 ## 1.0.0 — protótipo inicial (2026-10-29)
 
 - Ditado local em pt-BR com Whisper, atalho global com modos segurar/alternar e processamento em processo separado.

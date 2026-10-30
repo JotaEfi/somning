@@ -1,8 +1,8 @@
-﻿# Publicação inicial — Somning 1.0.0
+﻿# Somning 1.0.1 — protótipo
 
 ## Estado
 
-Preparação local da versão 1.0.0 autorizada pelo dono. Identidade inspirada na gota aprovada em 29/10/2026. Código do protótipo autorizado para publicação pública em github.com/JotaEfi/somning. Os pacotes binários continuam sendo preparados localmente.
+Versão 1.0.1 do protótipo: atalhos configuráveis, recorte nativo do vidro e ajustes da bandeja. Publicação no GitHub autorizada pelo dono, com instalador, ZIP do aplicativo, código-fonte separado e checksums. A release é marcada como Latest para aparecer na página inicial do repositório; isso não elimina as limitações de validação listadas abaixo.
 
 ## Conteúdo esperado do pacote
 
@@ -12,7 +12,7 @@ Preparação local da versão 1.0.0 autorizada pelo dono. Identidade inspirada n
 - Documentação de uso, instalação, privacidade e componentes de terceiros.
 - Manifesto de versão e resumo SHA-256 dos artefatos de distribuição.
 
-## Antes da publicação externa
+## Verificações de distribuição e limitações
 
 - Confirmar o canal de distribuição.
 - Definir contato de suporte. O código é distribuído sob a licença MIT, com titular JotaEfi.

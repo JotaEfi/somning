@@ -5,7 +5,7 @@
 ![Somning — Sua voz. Seu texto. Ditado em português, direto no Windows.](docs/images/hero.svg)
 
 <p align="center">
-  <strong>Windows 10 x64 · Português do Brasil · Whisper local · Protótipo 1.0</strong>
+  <strong>Windows 10 x64 · Português do Brasil · Whisper local · Protótipo 1.0.1</strong>
 </p>
 
 <p align="center">
@@ -19,7 +19,7 @@ O **Somning** transforma sua fala em texto no campo em que você está trabalhan
 
 O processamento local usa **Whisper**, em um processo separado. Depois de baixar os modelos, você pode ditar offline. **Groq** e **OpenAI** são opções de nuvem ativadas por você, com sua própria chave.
 
-> **Versão 1.0 do protótipo.** O fluxo de ditado está implementado; aparência nativa, compatibilidade entre aplicativos e fluidez em monitores de alta frequência continuam em validação. Veja as [limitações conhecidas](docs/RELEASE-1.0.md).
+> **Versão 1.0.1 do protótipo.** O fluxo de ditado está implementado; aparência nativa, compatibilidade entre aplicativos e fluidez em monitores de alta frequência continuam em validação. Veja as [limitações conhecidas](docs/RELEASE-1.0.md).
 
 ## Como funciona
 
@@ -27,7 +27,7 @@ O processamento local usa **Whisper**, em um processo separado. Depois de baixar
 | :--- | :--- | :--- |
 | Pressione **Ctrl + Shift + Espaço** no campo de destino. | A gota de vidro acompanha o nível da sua voz. | O Somning transcreve, copia e tenta colar o texto. |
 
-Um toque curto no atalho também permite alternar a gravação. Se a colagem automática não ocorrer, use **Ctrl+V**: o texto continua na área de transferência.
+Um toque curto no atalho também permite alternar a gravação. Em **Configurações → Atalhos**, clique na ação e pressione a combinação desejada. O padrão para ativar é **Ctrl + Shift + Espaço**; **Esc** cancela a gravação e **Ctrl + Enter** confirma, encerrando a gravação para transcrever. As três combinações devem ser diferentes e mudam ao salvar. Os atalhos ficam suspensos enquanto as configurações estão abertas para você editá-los sem iniciar um ditado. Se a colagem automática não ocorrer, use **Ctrl+V**: o texto continua na área de transferência.
 
 ![Sequência da entrada viscosa da gota, renderizada pelo motor visual do Somning sobre um fundo sintético.](docs/images/voice-animation.png)
 
@@ -46,7 +46,7 @@ O aplicativo permanece na **bandeja do Windows**. O menu dá acesso às configur
 | Recurso | No protótipo |
 | :--- | :--- |
 | Ditado em pt-BR | Whisper local, com modelos baixados separadamente |
-| Atalho global | Segurar para falar ou toque para alternar |
+| Atalhos globais | Combinações independentes para ativar, cancelar e confirmar |
 | Destino do texto | Área de transferência e colagem automática configurável |
 | Microfone e vocabulário | Seleção de dispositivo e termos personalizados |
 | Nuvem opcional | Groq ou OpenAI, com chave protegida pelo Windows via DPAPI |
@@ -57,7 +57,7 @@ O aplicativo permanece na **bandeja do Windows**. O menu dá acesso às configur
 
 **Requisitos:** Windows 10 x64, microfone e espaço para o aplicativo e os modelos. O modelo principal ocupa aproximadamente 574 MB. O pacote inclui o runtime .NET; o uso do aplicativo não exige o SDK.
 
-Baixe **Somning-1.0.0-Setup.exe** na [Release 1.0](https://github.com/JotaEfi/somning/releases/tag/v1.0.0-prototype.1) e siga o assistente. A instalação é por usuário e inclui desinstalador. Os modelos são baixados separadamente pelo atalho **Somning - Baixar modelos** no Menu Iniciar. O código-fonte também está disponível em um ZIP separado na mesma release.
+Baixe **Somning-1.0.1-Setup.exe** na [release mais recente](https://github.com/JotaEfi/somning/releases/latest) e siga o assistente. A instalação é por usuário e inclui desinstalador. Os modelos são baixados separadamente pelo atalho **Somning - Baixar modelos** no Menu Iniciar. O código-fonte também está disponível em um ZIP separado na mesma release.
 
 Se preferir o pacote ZIP do aplicativo:
 
@@ -110,13 +110,13 @@ powershell -NoProfile -File tools/package.ps1
 
 Para gerar o Setup.exe, instale Inno Setup 6 e execute `powershell -NoProfile -File tools/setup.ps1` após o empacotamento.
 
-Saída: `publish/Somning-1.0.0-win-x64.zip`, com checksum `.sha256` ao lado. Modelos não são incluídos. Não distribua builds Debug nem pacotes com `-WithHarness`.
+Saída: `publish/Somning-1.0.1-win-x64.zip`, com checksum `.sha256` ao lado. Modelos não são incluídos. Não distribua builds Debug nem pacotes com `-WithHarness`.
 
 **Testes de integração:** alguns usam foco, teclado e desktop real. Execute esses casos apenas em uma sessão dedicada; não rode toda a suíte enquanto usa o computador.
 
 ## Estado da versão 1.0
 
-O build Release foi validado com avisos tratados como erros. A última execução completa dos testes Core passou com **367 testes**; os **11 testes de configurações sem interação com o desktop** também passaram. Esses números não significam cobertura de todos os aplicativos ou aprovação visual do Windows real.
+O build Release foi validado com avisos tratados como erros. A última execução completa dos testes Core passou com **384 testes**; os **17 testes de configurações sem interação com o desktop** também passaram. Esses números não significam cobertura de todos os aplicativos ou aprovação visual do Windows real.
 
 A colagem em Word, alvos elevados/UIPI e outros cenários do desktop tem ressalvas. Instalação em máquina limpa, DPI e comportamento após suspensão/logon ainda exigem verificação. Os detalhes estão nas [notas do protótipo](docs/RELEASE-1.0.md) e no [changelog](CHANGELOG.md).
 

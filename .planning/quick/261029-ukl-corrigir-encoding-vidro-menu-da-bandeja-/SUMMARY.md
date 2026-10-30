@@ -1,2 +1,0 @@
-﻿# Correcoes de texto, recorte, menu e frames
-Commit 93bcf40. XAML reparado de mojibake e gravado em UTF8 explicito. Frame sem margem; recorte nativo reaplicado apos layout e DPI via dispatcher idle. Menu WPF escuro em STA dedicado com dispatcher encerrado ao fechar. Overlay sincronizado com DwmFlush, sem limite calm30fps; fallback5ms. Build zero avisos/erros, Core367 e Settings11 aprovados. Benchmark headless 1,18ms silencio e1,56ms voz por frame a100%DPI. Nao comprova180fps na tela; validacao visual do dono pendente. Pacote regenerado e app relancado.

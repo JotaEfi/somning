@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
 using System.Runtime.InteropServices;
@@ -148,47 +148,43 @@ public sealed class TrayIconManager : IDisposable
 
     private void ShowContextMenu()
     {
-        var menu = CreatePopupMenu();
-        if (menu == 0) return;
-
-        try
+        var popupThread = new Thread(() =>
         {
-            var repasteFlags = (CanRepaste?.Invoke() ?? false) ? MfString | MfEnabled : MfString | MfGrayed;
-
-            AppendMenuW(menu, MfString, MenuSettings, "Configurações...");
-            AppendMenuW(menu, repasteFlags, MenuRepaste, "Colar último");
-            AppendMenuW(menu, MfString, MenuOpenLogs, "Abrir pasta de logs");
-            AppendMenuW(menu, MfSeparator, 0, string.Empty);
-            AppendMenuW(menu, MfString, MenuExit, "Sair");
-
-            GetCursorPos(out var pt);
-            SetForegroundWindow(hwnd);
-
-            var cmd = TrackPopupMenuEx(menu, TpmRightButton | TpmReturnCmd, pt.X, pt.Y, hwnd, 0);
-            PostMessageW(hwnd, 0, 0, 0); // dismiss hack
-
-            switch (cmd)
+            var menu = new System.Windows.Controls.ContextMenu
             {
-                case MenuSettings:
-                    OpenSettingsRequested?.Invoke();
-                    break;
-                case MenuRepaste:
-                    RepasteLastRequested?.Invoke();
-                    break;
-                case MenuOpenLogs:
-                    OpenLogsRequested?.Invoke();
-                    break;
-                case MenuExit:
-                    ExitRequested?.Invoke();
-                    break;
+                Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(24, 28, 33)),
+                Foreground = System.Windows.Media.Brushes.WhiteSmoke,
+                BorderBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(70, 78, 86)),
+                BorderThickness = new System.Windows.Thickness(1),
+                Padding = new System.Windows.Thickness(6),
+                FontFamily = new System.Windows.Media.FontFamily("Segoe UI"),
+                FontSize = 13,
+                MinWidth = 220,
+                Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint
+            };
+            void Add(string label, Action action, bool enabled = true)
+            {
+                var item = new System.Windows.Controls.MenuItem
+                {
+                    Header = label, IsEnabled = enabled,
+                    Padding = new System.Windows.Thickness(12, 8, 12, 8)
+                };
+                item.Click += (_, _) => action();
+                menu.Items.Add(item);
             }
-        }
-        finally
-        {
-            DestroyMenu(menu);
-        }
+            Add("_Configurações…", () => OpenSettingsRequested?.Invoke());
+            Add("Colar _último", () => RepasteLastRequested?.Invoke(), CanRepaste?.Invoke() ?? false);
+            Add("Abrir pasta de _logs", () => OpenLogsRequested?.Invoke());
+            menu.Items.Add(new System.Windows.Controls.Separator());
+            Add("_Sair", () => ExitRequested?.Invoke());
+            SetForegroundWindow(hwnd);
+            menu.Closed += (_, _) => System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvokeShutdown(System.Windows.Threading.DispatcherPriority.Background);
+            menu.IsOpen = true;
+            System.Windows.Threading.Dispatcher.Run();
+        }) { IsBackground = true, Name = "Somning.Tray.Menu" };
+        popupThread.SetApartmentState(ApartmentState.STA);
+        popupThread.Start();
     }
-
     private nint LoadDefaultIcon()
     {
         var path = Environment.ProcessPath;

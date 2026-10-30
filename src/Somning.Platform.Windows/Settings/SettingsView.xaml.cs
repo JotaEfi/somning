@@ -35,8 +35,8 @@ public partial class SettingsView : Window
         Header.MouseLeftButtonDown += (_, e) => { if (e.ButtonState == MouseButtonState.Pressed) DragMove(); };
         Glass.SizeChanged += (_, _) => UpdateGlassGeometry();
         SourceInitialized += (_, _) => UseBackdropFill(GlassBackdrop.TryEnable(this));
-        ContentRendered += (_, _) => UpdateGlassGeometry();
-        DpiChanged += (_, _) => UpdateGlassGeometry();
+        ContentRendered += (_, _) => Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle, new Action(UpdateGlassGeometry));
+        DpiChanged += (_, _) => Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle, new Action(UpdateGlassGeometry));
         UpdateProviderHint();
     }
 
@@ -66,7 +66,7 @@ public partial class SettingsView : Window
         InnerShadowHost.Clip = glass;
         // Shadow only outside the glass so the translucent body is not darkened from below.
         ShadowHost.Clip = new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(new Rect(-60, -60, w + 120, h + 120)), glass);
-        if (isAcrylic)
+        if (PresentationSource.FromVisual(this) is not null)
         {
             var origin = Glass.TranslatePoint(new Point(0, 0), this);
             GlassBackdrop.ClipToRoundedRect(this, new Rect(origin, new Size(w, h)), GlassRadius);

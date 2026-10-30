@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Somning.Core.Overlay;
@@ -33,8 +33,7 @@ public sealed class OverlayWindowManager : IOverlayView
     private const uint WmQuit = 0x0012;
     private const uint QsAllInput = 0x04FF;
     private const uint Infinite = 0xFFFFFFFF;
-    private const long FrameIntervalMs = 16;      // ~60 fps while anything moves quickly
-    private const long CalmFrameIntervalMs = 33;  // ~30 fps when calm (OverlayAnimator.IsCalm)
+    private const long FrameIntervalMs = 5; // fallback when DWM synchronization is unavailable
 
     private readonly Thread staThread;
     private readonly TaskCompletionSource<nint> ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -168,7 +167,7 @@ public sealed class OverlayWindowManager : IOverlayView
     }
 
     /// <summary>
-    /// Message loop that doubles as the ~60 fps frame clock while the pill is visible or fading, and blocks
+    /// Message loop that doubles as the display-synchronized frame clock while the pill is visible or fading, and blocks
     /// without waking while hidden. Never activates or focuses the window.
     /// </summary>
     private void RunAnimationLoop()
@@ -217,11 +216,14 @@ public sealed class OverlayWindowManager : IOverlayView
                 if (windowShown) HideWindow();
             }
 
-            MsgWaitForMultipleObjects(0, 0, false, animator.IsActive ? FrameWaitMs(frameStart, animator.IsCalm ? CalmFrameIntervalMs : FrameIntervalMs) : Infinite, QsAllInput);
+            if (animator.IsActive && DwmFlush() == 0) continue;
+            MsgWaitForMultipleObjects(0, 0, false, animator.IsActive ? FrameWaitMs(frameStart, FrameIntervalMs) : Infinite, QsAllInput);
         }
 
         if (timerRaised) timeEndPeriod(1);
     }
+
+    [DllImport("dwmapi.dll")] private static extern int DwmFlush();
 
     private static uint FrameWaitMs(long frameStart, long intervalMs)
     {

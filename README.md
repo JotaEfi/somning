@@ -57,7 +57,9 @@ O aplicativo permanece na **bandeja do Windows**. O menu dá acesso às configur
 
 **Requisitos:** Windows 10 x64, microfone e espaço para o aplicativo e os modelos. O modelo principal ocupa aproximadamente 574 MB. O pacote inclui o runtime .NET; o uso do aplicativo não exige o SDK.
 
-Este repositório publica o código do protótipo. Para gerar o pacote, siga [Desenvolvimento](#desenvolvimento). Em um ZIP já preparado:
+Baixe **Somning-1.0.0-Setup.exe** na [Release 1.0](https://github.com/JotaEfi/somning/releases/tag/v1.0.0-prototype.1) e siga o assistente. A instalação é por usuário e inclui desinstalador. Os modelos são baixados separadamente pelo atalho **Somning - Baixar modelos** no Menu Iniciar. O código-fonte também está disponível em um ZIP separado na mesma release.
+
+Se preferir o pacote ZIP do aplicativo:
 
 1. Extraia todo o conteúdo, preservando a pasta `engine`.
 2. Execute **`Instalar.cmd`** para instalar por usuário.
@@ -105,6 +107,8 @@ Para gerar o ZIP com runtime e scripts de instalação:
 ```powershell
 powershell -NoProfile -File tools/package.ps1
 ```
+
+Para gerar o Setup.exe, instale Inno Setup 6 e execute `powershell -NoProfile -File tools/setup.ps1` após o empacotamento.
 
 Saída: `publish/Somning-1.0.0-win-x64.zip`, com checksum `.sha256` ao lado. Modelos não são incluídos. Não distribua builds Debug nem pacotes com `-WithHarness`.
 

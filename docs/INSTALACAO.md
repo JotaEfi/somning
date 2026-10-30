@@ -4,7 +4,11 @@
 
 Windows 10 x64, microfone funcional e espaço para o programa e modelos. O modelo local principal ocupa aproximadamente 574 MB; o pacote do aplicativo e o runtime ocupam espaço adicional. O caminho Vulkan exige hardware e driver compatíveis; o resultado em outra máquina deve ser validado antes da distribuição ampla.
 
-## Pacote para download
+## Instalador Setup.exe
+
+Baixe `Somning-1.0.0-Setup.exe` na [Release 1.0](https://github.com/JotaEfi/somning/releases/tag/v1.0.0-prototype.1). O assistente instala por usuário em `%LOCALAPPDATA%\Somning\app`, cria atalhos e registra o desinstalador. Os modelos e dados pessoais ficam fora da pasta do programa e são preservados na desinstalação. Após instalar, execute **Somning - Baixar modelos** no Menu Iniciar. O instalador não tem assinatura digital.
+
+## Pacote ZIP alternativo
 
 Extraia o ZIP completo em uma pasta. Preserve a subpasta `engine`: o executável principal precisa do motor e das bibliotecas que acompanham o pacote. O pacote contém scripts PowerShell (`Instalar.cmd` executa o instalador); não é um instalador Setup.exe. Como os binários não são assinados digitalmente, o Windows SmartScreen pode exibir um aviso.
 

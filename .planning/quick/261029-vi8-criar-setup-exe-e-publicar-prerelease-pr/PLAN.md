@@ -1,0 +1,1 @@
+﻿Gerar instalador Inno Setup por usuario, sem admin, com desinstalacao e atalhos. Preservar modelos/config/logs. Empacotar codigo-fonte separado no mesmo commit da tag. Validar compilacao e instalacao silenciosa isolada sem atalhos/launch. Publicar prerelease v1.0.0 com Setup, ZIP, source e SHA256. Atualizar README e guia.

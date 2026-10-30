@@ -1,0 +1,1 @@
+﻿Substituir template padrao ContextMenu/MenuItem/Separator por templates explicitos escuros, sem gutter e scroll do tema. Preservar teclado, enabled e callbacks. Build warnaserror e teste de construcao headless.

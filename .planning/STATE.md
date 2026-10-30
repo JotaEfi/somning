@@ -4,10 +4,10 @@ milestone: v1.0
 current_phase: 4
 status: completed
 stopped_at: Phase 4 complete — all phases complete
-last_updated: "2026-10-30T01:06:45.671Z"
+last_updated: "2026-10-30T01:26:36.377Z"
 last_activity: 2026-10-30
 last_activity_desc: Quick 261029-o9m concluida; pacote 1.0.0 gerado
-state_head: 1eb5a6105582d7743f397725894d90d13ec468f4
+state_head: 2286f6a460a2c0337a5a81d27c8313c5533afe42
 progress:
   total_phases: 4
   completed_phases: 4
@@ -87,3 +87,4 @@ Progress: [██████████] 100%
 | 261029-uez | Correcao de vidro nativo e icone ampliado; validacao visual pendente | 2026-10-30 | 552b8b3 | [261029-uez-corrigir-vidro-nativo-das-configuracoes-](./quick/261029-uez-corrigir-vidro-nativo-das-configuracoes-/) |
 | 261029-ukl | Textos UTF8, recorte externo, menu escuro e frames sincronizados; visual pendente | 2026-10-30 | 93bcf40 | [261029-ukl-corrigir-encoding-vidro-menu-da-bandeja-](./quick/261029-ukl-corrigir-encoding-vidro-menu-da-bandeja-/) |
 | 261029-up0 | Template proprio do menu sem gutter branco e scroll | 2026-10-30 | 1eb5a61 | [261029-up0-corrigir-template-do-menu-da-bandeja-sem](./quick/261029-up0-corrigir-template-do-menu-da-bandeja-sem/) |
+| 261029-v36 | Prototipo1.0 publico no GitHub com README ilustrado | 2026-10-30 | 2286f6a | [261029-v36-preparar-prototipo-1-0-e-criar-repositor](./quick/261029-v36-preparar-prototipo-1-0-e-criar-repositor/) |

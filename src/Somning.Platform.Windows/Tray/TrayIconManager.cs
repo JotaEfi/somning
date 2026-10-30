@@ -162,11 +162,53 @@ public sealed class TrayIconManager : IDisposable
                 MinWidth = 220,
                 Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint
             };
+            var menuStyle = (System.Windows.Style)System.Windows.Markup.XamlReader.Parse("""
+                <Style xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" TargetType="ContextMenu">
+                  <Setter Property="OverridesDefaultStyle" Value="True"/>
+                  <Setter Property="Template"><Setter.Value>
+                    <ControlTemplate TargetType="ContextMenu">
+                      <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                              BorderThickness="1" CornerRadius="10" Padding="6" SnapsToDevicePixels="True">
+                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                      </Border>
+                    </ControlTemplate>
+                  </Setter.Value></Setter>
+                </Style>
+                """);
+            menu.Style = menuStyle;
+            menu.HasDropShadow = false;
+            var itemStyle = (System.Windows.Style)System.Windows.Markup.XamlReader.Parse("""
+                <Style xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" TargetType="MenuItem">
+                  <Setter Property="OverridesDefaultStyle" Value="True"/>
+                  <Setter Property="Background" Value="Transparent"/>
+                  <Setter Property="Foreground" Value="#ECEFF2"/>
+                  <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                  <Setter Property="Template"><Setter.Value>
+                    <ControlTemplate TargetType="MenuItem">
+                      <Border x:Name="Row" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                              Background="{TemplateBinding Background}" CornerRadius="6" Padding="12,9">
+                        <ContentPresenter ContentSource="Header" RecognizesAccessKey="True"/>
+                      </Border>
+                      <ControlTemplate.Triggers>
+                        <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Row" Property="Background" Value="#303B43"/></Trigger>
+                        <Trigger Property="IsEnabled" Value="False"><Setter Property="Foreground" Value="#7D8790"/></Trigger>
+                      </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                  </Setter.Value></Setter>
+                </Style>
+                """);
+            var separatorStyle = (System.Windows.Style)System.Windows.Markup.XamlReader.Parse("""
+                <Style xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" TargetType="Separator">
+                  <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Separator">
+                    <Border Height="1" Margin="10,5" Background="#364049"/>
+                  </ControlTemplate></Setter.Value></Setter>
+                </Style>
+                """);
             void Add(string label, Action action, bool enabled = true)
             {
                 var item = new System.Windows.Controls.MenuItem
                 {
-                    Header = label, IsEnabled = enabled,
+                    Header = label, IsEnabled = enabled, Style = itemStyle,
                     Padding = new System.Windows.Thickness(12, 8, 12, 8)
                 };
                 item.Click += (_, _) => action();
@@ -175,7 +217,7 @@ public sealed class TrayIconManager : IDisposable
             Add("_Configurações…", () => OpenSettingsRequested?.Invoke());
             Add("Colar _último", () => RepasteLastRequested?.Invoke(), CanRepaste?.Invoke() ?? false);
             Add("Abrir pasta de _logs", () => OpenLogsRequested?.Invoke());
-            menu.Items.Add(new System.Windows.Controls.Separator());
+            menu.Items.Add(new System.Windows.Controls.Separator { Style = separatorStyle });
             Add("_Sair", () => ExitRequested?.Invoke());
             SetForegroundWindow(hwnd);
             menu.Closed += (_, _) => System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvokeShutdown(System.Windows.Threading.DispatcherPriority.Background);

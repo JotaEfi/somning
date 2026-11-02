@@ -9,7 +9,7 @@
 - Configurações: mais espaço no seletor de tema de sons e nova linha **Estilo da gota**.
 - `tools/package.ps1` e `tools/setup.ps1` aceitam `-Arch x64|arm64`.
 - Documentação: README com a galeria dos estilos, guia de instalação para as duas arquiteturas e `.gitignore`/`.gitattributes` revisados.
-- Projeto: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, modelos de issue e de pull request e integração contínua (compila sem avisos, roda os testes do Core e confere a publicação para ARM64).
+- Projeto: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, modelos de issue e de pull request e integração contínua (compila sem avisos, roda os testes do Core e os de renderização da gota e das Configurações, e confere a publicação para ARM64).
 
 ## 1.0.3 — instalador corrigido e sons
 

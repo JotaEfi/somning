@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Relatar uma vulnerabilidade de segurança
+    url: https://github.com/JotaEfi/somning/security/advisories/new
+    about: Falhas de segurança devem ser relatadas em particular, nunca em uma issue pública.
+  - name: Privacidade e armazenamento
+    url: https://github.com/JotaEfi/somning/blob/main/docs/PRIVACIDADE.md
+    about: Onde ficam configurações, logs, modelos e áudios, e o que é enviado à nuvem.

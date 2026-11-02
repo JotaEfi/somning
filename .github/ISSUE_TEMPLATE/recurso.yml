@@ -1,0 +1,40 @@
+name: Sugerir um recurso
+description: Uma ideia para melhorar o Somning.
+title: "[Ideia] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        O Somning é feito para ser **funcional e simples**: pouca interface e nada que não faça parte do ditado.
+        Ideias que mantenham isso são muito bem-vindas.
+  - type: textarea
+    id: problema
+    attributes:
+      label: Qual problema isso resolve?
+      description: Conte a situação em que você sentiu falta disso.
+    validations:
+      required: true
+  - type: textarea
+    id: proposta
+    attributes:
+      label: Como você imagina a solução?
+    validations:
+      required: true
+  - type: textarea
+    id: alternativas
+    attributes:
+      label: Alternativas que você considerou
+  - type: dropdown
+    id: area
+    attributes:
+      label: Área
+      options:
+        - Ditado e transcrição
+        - Gota e estilos visuais
+        - Configurações
+        - Instalação e atualização
+        - Documentação
+        - Outra
+    validations:
+      required: true

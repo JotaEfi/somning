@@ -1,0 +1,73 @@
+name: Build e testes
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Uma execução por branch: uma nova cancela a anterior.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-e-testes:
+    name: Compilar e testar (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Instalar o SDK do .NET indicado em global.json
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Compilar (avisos tratados como erros)
+        run: dotnet build Somning.sln -c Release -warnaserror --nologo
+
+      - name: Testes do Core
+        shell: pwsh
+        run: |
+          & .\tests\Somning.Core.Tests\bin\Release\net10.0\Somning.Core.Tests.exe
+          if ($LASTEXITCODE -ne 0) { throw "Testes do Core falharam (código $LASTEXITCODE)." }
+
+  confere-arm64:
+    name: Publicar para ARM64 (confere que compila)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Instalar o SDK do .NET indicado em global.json
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Publicar o aplicativo e o motor para win-arm64
+        shell: pwsh
+        run: |
+          dotnet publish src/Somning.App -c Release -r win-arm64 --self-contained -o out/arm64 -p:PublishSingleFile=false --nologo
+          dotnet publish src/Somning.Engine -c Release -r win-arm64 --self-contained -o out/arm64/engine -p:PublishSingleFile=false --nologo
+
+      - name: Conferir que os binários são ARM64
+        shell: pwsh
+        run: |
+          function Machine($path) {
+            $b = [IO.File]::ReadAllBytes($path)
+            $pe = [BitConverter]::ToInt32($b, 0x3C)
+            '{0:X4}' -f [BitConverter]::ToUInt16($b, $pe + 4)
+          }
+          foreach ($exe in 'out/arm64/Somning.App.exe', 'out/arm64/engine/Somning.Engine.exe') {
+            $m = Machine $exe
+            Write-Host "$exe -> $m"
+            if ($m -ne 'AA64') { throw "$exe não é ARM64 (máquina $m)." }
+          }
+          if (-not (Test-Path 'out/arm64/engine/runtimes/win-arm64/whisper.dll')) {
+            throw 'Falta o whisper.dll nativo para win-arm64.'
+          }

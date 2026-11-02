@@ -9,6 +9,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/JotaEfi/somning/actions/workflows/build.yml"><img alt="Build e testes" src="https://github.com/JotaEfi/somning/actions/workflows/build.yml/badge.svg" /></a>
   <img alt="Licença MIT" src="https://img.shields.io/badge/licença-MIT-2ea44f" />
   <img alt="Windows 10 e 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4" />
   <img alt="x64 e ARM64" src="https://img.shields.io/badge/arquitetura-x64%20%7C%20ARM64-5b5fc7" />
@@ -185,7 +186,7 @@ O build Release é validado com avisos tratados como erros. A última execução
 
 **Ainda não validado:** os instaladores para **ARM64** e a execução no **Windows 11** nunca rodaram em hardware real; as prévias da gota foram avaliadas em imagens com fala sintética, não em movimento com microfone; a colagem em Word, alvos elevados/UIPI e outros cenários do desktop têm ressalvas. Instalação em máquina limpa, DPI e comportamento após suspensão/logon também exigem verificação. Os detalhes estão nas [notas do protótipo](docs/RELEASE-1.0.md) e no [changelog](CHANGELOG.md).
 
-Encontrou um problema? [Abra uma issue](https://github.com/JotaEfi/somning/issues) com versão do Windows, arquitetura (x64 ou ARM64), passos para reproduzir e resultado esperado. Não envie gravações pessoais, chaves ou logs sem revisão.
+Encontrou um problema? [Abra uma issue](https://github.com/JotaEfi/somning/issues/new/choose) com versão do Windows, arquitetura (x64 ou ARM64), passos para reproduzir e resultado esperado. Não envie gravações pessoais, chaves ou logs sem revisão. Falhas de segurança seguem a [política de segurança](SECURITY.md). Quer contribuir? Leia o [guia de contribuição](CONTRIBUTING.md) e o [código de conduta](CODE_OF_CONDUCT.md).
 
 ## Créditos e licença
 

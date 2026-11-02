@@ -1,0 +1,89 @@
+name: Relatar um problema
+description: Algo não funciona como esperado no Somning.
+title: "[Problema] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Obrigado por relatar! Quanto mais detalhes, mais rápido dá para entender o problema.
+
+        **Não envie gravações de voz, chaves de API nem logs sem revisar:** eles podem conter o que você ditou.
+        Para falhas de segurança, **não use esta página**: veja a [política de segurança](https://github.com/JotaEfi/somning/security/policy).
+  - type: input
+    id: versao
+    attributes:
+      label: Versão do Somning
+      description: Está no título da janela de Configurações (por exemplo, 1.0.3).
+      placeholder: "1.0.3"
+    validations:
+      required: true
+  - type: dropdown
+    id: arquitetura
+    attributes:
+      label: Arquitetura do computador
+      description: Em Configurações do Windows → Sistema → Sobre, veja "Tipo de sistema".
+      options:
+        - x64 (Intel ou AMD)
+        - ARM64 (Snapdragon e similares)
+        - Não sei
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Versão do Windows
+      placeholder: "Windows 11 23H2"
+    validations:
+      required: true
+  - type: dropdown
+    id: modo
+    attributes:
+      label: Modo de transcrição
+      options:
+        - Local (Whisper)
+        - Nuvem (Groq)
+        - Nuvem (OpenAI)
+        - Não sei
+    validations:
+      required: true
+  - type: dropdown
+    id: estilo
+    attributes:
+      label: Estilo da gota (se o problema for visual)
+      options:
+        - Não se aplica
+        - Clássica (grafite)
+        - Gel reativo
+        - Mercúrio
+        - Lente líquida
+        - Água escura
+  - type: textarea
+    id: passos
+    attributes:
+      label: Passos para reproduzir
+      placeholder: |
+        1. Abrir o Word
+        2. Segurar Ctrl + Shift + Espaço e falar
+        3. Soltar
+    validations:
+      required: true
+  - type: textarea
+    id: esperado
+    attributes:
+      label: O que você esperava
+    validations:
+      required: true
+  - type: textarea
+    id: aconteceu
+    attributes:
+      label: O que aconteceu
+      description: Se puder, anexe uma captura de tela.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Trechos de log (opcional)
+      description: Revise antes de colar e apague qualquer texto que você tenha ditado. O menu da bandeja abre a pasta de logs.
+      render: text

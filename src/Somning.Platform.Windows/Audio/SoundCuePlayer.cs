@@ -1,5 +1,4 @@
 using System.IO;
-using System.Media;
 using System.Reflection;
 
 namespace Somning.Platform.Windows.Audio;
@@ -24,12 +23,12 @@ public enum SoundCue
 
 /// <summary>
 /// Plays the cues of the selected theme on the thread pool. Every cue, including the classic beeps, is a WAV played
-/// through the default output device: <c>Console.Beep</c> is silent in a windowless app on many machines. Cues are
-/// conditioned (fade-out and silent tail) so they never end in a click, and play one at a time so a cue is never cut
-/// off by the next one. Capturing audio never waits for a cue, and a machine whose audio stack rejects the sound
+/// through a persistent output stream (see <see cref="CueOutput"/>): <c>Console.Beep</c> is silent in a windowless app on many machines. Cues are
+/// conditioned (fade-out and silent tail) so they never end in a click, and are mixed into a stream that never closes, so the
+/// device never pops. Capturing audio never waits for a cue, and a machine whose audio stack rejects the sound
 /// simply stays silent instead of failing the dictation.
 /// </summary>
-public sealed class SoundCuePlayer : ISoundCuePlayer
+public sealed class SoundCuePlayer : ISoundCuePlayer, IDisposable
 {
     public const string DefaultTheme = SoundThemes.Classic;
 
@@ -42,7 +41,7 @@ public sealed class SoundCuePlayer : ISoundCuePlayer
     public const int CancelCueMs = 140;
 
     private readonly Action<Stream> play;
-    private readonly object playLock = new();
+    private readonly CueOutput? sharedOutput;
     private volatile bool enabled = true;
     private volatile string theme = DefaultTheme;
 
@@ -51,8 +50,18 @@ public sealed class SoundCuePlayer : ISoundCuePlayer
     /// <summary>The playback delegate is injectable so tests can observe cues without touching the audio device.</summary>
     public SoundCuePlayer(Action<Stream>? play)
     {
-        this.play = play ?? PlayWav;
+        if (play is null)
+        {
+            sharedOutput = new CueOutput();
+            this.play = sharedOutput.Play;
+        }
+        else
+        {
+            this.play = play;
+        }
     }
+
+    public void Dispose() => sharedOutput?.Dispose();
 
     public bool Enabled
     {
@@ -86,8 +95,7 @@ public sealed class SoundCuePlayer : ISoundCuePlayer
             {
                 var wav = selected == SoundThemes.Classic ? ClassicWav(cue) : EmbeddedWav(SoundThemes.ResourceName(selected, cue));
                 if (wav is null) return;
-                // SoundPlayer restarts the process-wide sound on every call: serialising avoids cutting a cue mid-wave.
-                lock (playLock) play(new MemoryStream(wav));
+                play(new MemoryStream(wav));
             }
             catch (Exception ex) when (ex is IOException or InvalidOperationException or PlatformNotSupportedException or TimeoutException)
             {
@@ -111,11 +119,5 @@ public sealed class SoundCuePlayer : ISoundCuePlayer
         using var copy = new MemoryStream();
         stream.CopyTo(copy);
         return CueWave.Smooth(copy.ToArray());
-    }
-
-    private static void PlayWav(Stream wav)
-    {
-        using var player = new SoundPlayer(wav);
-        player.PlaySync();
     }
 }

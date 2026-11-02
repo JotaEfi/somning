@@ -428,6 +428,7 @@ public sealed class AppComposition : IAsyncDisposable
 #if SOMNING_TEST_HARNESS
         if (Pipe is not null) await Pipe.DisposeAsync().ConfigureAwait(false);
 #endif
+        SoundPlayer.Dispose();
         SettingsWindow?.Dispose();
         Overlay?.Dispose();
         Tray?.Dispose();

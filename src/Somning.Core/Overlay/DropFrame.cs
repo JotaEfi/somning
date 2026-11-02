@@ -22,6 +22,13 @@ namespace Somning.Core.Overlay;
 /// <param name="TopTail">Entrance: remaining fraction of the upper filament after the snap.</param>
 /// <param name="BottomTail">Entrance: remaining fraction of the lower filament after the snap.</param>
 /// <param name="Pool">Entrance: radius of the mound at the screen edge, in drop radii.</param>
+/// <param name="Tone">Smoothed voice brightness 0..1; shifts and tightens the surface reflections.</param>
+/// <param name="Impact">Phoneme-onset flare 0..1 that flashes the reflections.</param>
+/// <param name="Slosh">Sideways slide of the body from the voice tone, -1 (left, low) .. 1 (right, high).</param>
+/// <param name="Wave0Front">Onset wave 0 position, 0 = rim, 1 = center.</param>
+/// <param name="Wave0Amp">Onset wave 0 strength, 0 = inactive.</param>
+/// <param name="Wave1Front">Onset wave 1 position, 0 = rim, 1 = center.</param>
+/// <param name="Wave1Amp">Onset wave 1 strength, 0 = inactive.</param>
 /// <param name="Lobe1X">Complex coefficients of the radial lobes (mode k adds a*cos(k*theta + phase)).</param>
 public readonly record struct DropFrame(
     OverlayMode Mode,
@@ -48,7 +55,12 @@ public readonly record struct DropFrame(
     float Neck = 0f,
     float TopTail = 0f,
     float BottomTail = 0f,
-    float Pool = 0f)
+    float Pool = 0f,
+    float Tone = 0f,
+    float Impact = 0f,
+    float Slosh = 0f,
+    float Wave0Front = 0f, float Wave0Amp = 0f,
+    float Wave1Front = 0f, float Wave1Amp = 0f)
 {
     /// <summary>True while the viscous entrance (edge mound / filament) must be drawn from the screen edge.</summary>
     public bool IsEmerging => Goo > 0f || Rise < 0.999f || Rise > 1.001f;

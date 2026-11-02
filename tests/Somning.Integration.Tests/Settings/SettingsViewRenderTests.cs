@@ -216,7 +216,8 @@ public sealed class SettingsViewRenderTests
             host.Measure(new Size(view.Width, double.PositiveInfinity));
             return host.DesiredSize;
         });
-        Assert.InRange(size.Height, 300, 720);
+        // 820 leaves room for the sound theme selector, the drop style selector and the keyboard-language option.
+        Assert.InRange(size.Height, 300, 820);
     }
 
     /// <summary>Renders the settings content over a synthetic wallpaper; in acrylic mode the area behind the glass is blurred to simulate the backdrop.</summary>

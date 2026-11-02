@@ -14,6 +14,9 @@ public sealed class SettingsViewModel
         ConfirmHotkey = CurrentSettings.ConfirmHotkey;
         AutoPaste = CurrentSettings.AutoPaste;
         PlaySoundCues = CurrentSettings.PlaySoundCues;
+        SoundTheme = CurrentSettings.SoundTheme;
+        DropStyle = Overlay.DropStyles.Normalize(CurrentSettings.DropStyle);
+        PreserveInputLanguage = CurrentSettings.PreserveInputLanguage;
         StartWithWindows = CurrentSettings.StartWithWindows;
         CustomVocabulary = CurrentSettings.CustomVocabulary;
         CloudProvider = CurrentSettings.CloudProvider;
@@ -30,6 +33,9 @@ public sealed class SettingsViewModel
     public string? ConflictWarning { get; private set; }
     public bool AutoPaste { get; set; }
     public bool PlaySoundCues { get; set; }
+    public string SoundTheme { get; set; }
+    public string DropStyle { get; set; }
+    public bool PreserveInputLanguage { get; set; }
     public bool StartWithWindows { get; set; }
     public string CustomVocabulary { get; set; }
     public string CloudProvider { get; set; }
@@ -57,6 +63,9 @@ public sealed class SettingsViewModel
             MicrophoneDeviceId = SelectedDeviceId,
             AutoPaste = AutoPaste,
             PlaySoundCues = PlaySoundCues,
+            SoundTheme = SoundTheme,
+            DropStyle = Overlay.DropStyles.Normalize(DropStyle),
+            PreserveInputLanguage = PreserveInputLanguage,
             StartWithWindows = StartWithWindows,
             CustomVocabulary = CustomVocabulary.Trim(),
             CloudProvider = CloudProvider,

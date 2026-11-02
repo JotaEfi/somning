@@ -1,0 +1,16 @@
+# Normaliza o fim de linha no repositório e respeita a configuração de cada máquina.
+* text=auto
+
+# Scripts que o Windows executa precisam de CRLF.
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.iss text eol=crlf
+
+# Binários: nunca tentar converter nem mostrar diff de texto.
+*.png binary
+*.ico binary
+*.wav binary
+*.mp3 binary
+*.bin binary
+*.dll binary
+*.exe binary

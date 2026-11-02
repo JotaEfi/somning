@@ -67,6 +67,7 @@ public sealed class AppComposition : IAsyncDisposable
         }
         AutoPasteEnabled = Settings.AutoPaste;
         SoundPlayer.Enabled = Settings.PlaySoundCues;
+        SoundPlayer.Theme = Settings.SoundTheme;
         if (DynamicAudioFactory is not null && !string.IsNullOrEmpty(Settings.MicrophoneDeviceId))
         {
             DynamicAudioFactory.CurrentDeviceId = Settings.MicrophoneDeviceId;
@@ -82,6 +83,7 @@ public sealed class AppComposition : IAsyncDisposable
         Sidecars = new SidecarStore(SomningPaths.RecordingsDir);
         Hook = new KeyboardHook(keys.Writer);
         Hook.ConfigureHotkeys(Settings);
+        Hook.PreserveInputLanguage = Settings.PreserveInputLanguage;
         Hook.ShouldIgnoreHotkeys = () => SettingsWindow?.IsOpen == true;
         // Pre-hook snapshot (H9): paths/IDs only; repair, model wait and inference all happen later in RecoveryService.
         Snapshot = RecoverySnapshot.Take(SomningPaths.RecordingsDir);
@@ -132,6 +134,7 @@ public sealed class AppComposition : IAsyncDisposable
     public void EnableOverlay(IOverlayView? customOverlay = null)
     {
         Overlay = customOverlay ?? new OverlayWindowManager();
+        Overlay.SetDropStyle(Settings.DropStyle);
     }
 
     public void EnableSettings(ISettingsWindow? customWindow = null)
@@ -154,10 +157,13 @@ public sealed class AppComposition : IAsyncDisposable
     public void ApplySettings(UserSettings updated)
     {
         Hook.ConfigureHotkeys(updated);
+        Hook.PreserveInputLanguage = updated.PreserveInputLanguage;
         Settings = updated;
         _ = SettingsStore.SaveAsync(updated);
         AutoPasteEnabled = updated.AutoPaste;
         SoundPlayer.Enabled = updated.PlaySoundCues;
+        SoundPlayer.Theme = updated.SoundTheme;
+        Overlay?.SetDropStyle(updated.DropStyle);
         if (DynamicAudioFactory is not null)
         {
             DynamicAudioFactory.CurrentDeviceId = updated.MicrophoneDeviceId;

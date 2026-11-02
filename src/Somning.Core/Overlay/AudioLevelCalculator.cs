@@ -35,6 +35,30 @@ public static class AudioLevelCalculator
         return Clamp01((float)Math.Sqrt(sumSquares / sampleCount));
     }
 
+    /// <summary>
+    /// Zero-crossing rate mapped to 0..1 as a cheap voice-brightness proxy: voiced low vowels cross rarely (near 0),
+    /// fricatives and high pitch cross often (near 1). Silence and near-silence return 0.
+    /// </summary>
+    public static float ComputeBrightness(ReadOnlySpan<byte> pcm)
+    {
+        var sampleCount = pcm.Length / sizeof(short);
+        if (sampleCount < 2) return 0f;
+
+        const int Deadband = 96;   // ignore sign flips caused by microphone noise around zero
+        var crossings = 0;
+        var previous = ReadSample(pcm, 0);
+        for (var index = 1; index < sampleCount; index++)
+        {
+            var current = ReadSample(pcm, index * sizeof(short));
+            if ((previous > Deadband && current < -Deadband) || (previous < -Deadband && current > Deadband)) crossings++;
+            if (Math.Abs((int)current) > Deadband) previous = current;
+        }
+
+        // Speech spans roughly 0.02 (low vowels) to 0.35 (sibilants) crossings per sample at 16 kHz.
+        var rate = crossings / (float)(sampleCount - 1);
+        return Clamp01((rate - 0.02f) / 0.28f);
+    }
+
     public static float ComputePeak(ReadOnlySpan<short> samples)
     {
         if (samples.IsEmpty) return 0f;

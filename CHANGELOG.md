@@ -1,9 +1,25 @@
 ﻿# Histórico de versões
 
-## 1.0.2 — modelos durante a instalação
+## Não lançado
 
-- Setup baixa e verifica automaticamente os modelos q5, q8 para CPU e VAD antes de instalar.
-- Falhas de rede ou verificação interrompem a preparação com orientações para tentar novamente.
+- **Cinco estilos de gota**, escolhidos em **Configurações → Estilo da gota** e aplicados na hora: Clássica (padrão), Gel reativo, Mercúrio, Lente líquida e Água escura. Todos mantêm a faixa escura reativa no centro e têm uma bolha de transcrição do mesmo estilo.
+- A gota responde ao **tom** da voz e ao **impacto** de cada início de fala, além do volume: o corpo se achata mais nas laterais, desliza para o lado conforme o tom e ondas viajam da borda ao centro a cada fonema.
+- **Windows 11 e ARM64:** instaladores separados (`Somning-1.0.3-Setup.exe` para x64 e `Somning-1.0.3-arm64-Setup.exe` para ARM64). Em ARM64 o ditado local roda na CPU, sem Vulkan. Ainda não validado em hardware real.
+- **Instalador:** a instalação silenciosa passa a fechar o Somning e o motor se estiverem abertos; antes abortava depois de 32 segundos com o aplicativo em execução. O desinstalador faz o mesmo.
+- Configurações: mais espaço no seletor de tema de sons e nova linha **Estilo da gota**.
+- `tools/package.ps1` e `tools/setup.ps1` aceitam `-Arch x64|arm64`.
+- Documentação: README com a galeria dos estilos, guia de instalação para as duas arquiteturas e `.gitignore`/`.gitattributes` revisados.
+
+## 1.0.3 — instalador corrigido e sons
+
+- O instalador volta a baixar os modelos durante a instalação, em janela com a barra de progresso. O download retoma de onde parou se a conexão cair, e a instalação oferece nova tentativa. Se o download não terminar, o atalho **Somning - Baixar modelos** completa depois.
+- Nova opção **Manter o idioma do teclado ao usar o atalho**, desligada por padrão. Não altera nenhuma configuração do Windows.
+- Temas de som: bipe padrão (novo padrão), gota d'água, vidro e madeira. Som também ao concluir a transcrição.
+- Configurações: fundo mais escuro no modo de desfoque, menus suspensos sem borda preta e desfoque do fundo limitado à forma arredondada.
+
+## 1.0.2 — retirada
+
+- Versão retirada: o instalador bloqueava a instalação quando o download dos modelos falhava. Use a versão 1.0.3.
 
 ## 1.0.1 — atalhos configuráveis e polimento (2026-10-30)
 

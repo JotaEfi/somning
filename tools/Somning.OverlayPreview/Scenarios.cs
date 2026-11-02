@@ -60,10 +60,11 @@ internal static class Scenarios
             for (var i = 0; i < steps; i++) Step(level);
         }
 
-        public void Step(Func<float, float>? level)
+        public void Step(Func<float, float>? level, Func<float, float>? tone = null)
         {
             Clock += Dt;
             Animator.SetLevel(level?.Invoke(Clock) ?? 0f);
+            Animator.SetTone(tone?.Invoke(Clock) ?? 0f);
             Animator.Tick(Dt);
             var (_, w, h) = Layout();
             Cache.Configure(WindowX, WindowY, w, h, Dpi, new BackdropRegion(0, 0, (int)(FakeDesktops.ScreenWidth * Dpi), (int)(FakeDesktops.ScreenHeight * Dpi)));
@@ -88,7 +89,10 @@ internal static class Scenarios
 
             Sheet(Path.Combine(dir, $"sheet-{name}.png"), sheet, 4);
             Timeline(dir, desk);
+            SpeechStrip(dir, desk, true);
         }
+
+        SpeechStrip(dir, Desk.Wallpaper, false);
 
         foreach (var desk in new[] { Desk.Wallpaper, Desk.Document, Desk.Code, Desk.Clock })
         {
@@ -148,7 +152,7 @@ internal static class Scenarios
         }
         var pixels = new uint[w * h];
         var caption = run.Mode == OverlayMode.Transcribing ? DropLayout.CreateCaption(OverlayText.Transcribing, run.Dpi) : TextMask.Empty;
-        var renderer = new DropRenderer();
+        var renderer = new DropRenderer { Style = DropStyles.Normalize(Environment.GetEnvironmentVariable("SOMNING_DROP_STYLE")) };
         var restCenterY = (h - run.Reach) / 2f;
         renderer.Render(pixels, w, h, run.Dpi, run.Animator.Frame, text, DropLayout.NoticeHalfWidth(text.Width, run.Dpi), caption, run.Cache.Texture, run.Cache.Availability,
             restCenterY, run.Reach > 0 ? h : -1f);
@@ -232,6 +236,33 @@ internal static class Scenarios
         }
 
         Sheet(Path.Combine(dir, $"timeline-{desk.ToString().ToLowerInvariant()}.png"), frames, 4);
+    }
+
+    /// <summary>Tone of the synthetic phrase: each syllable (about 0.37 s) alternates low, high and mid voices.</summary>
+    private static float StripTone(float t)
+    {
+        ReadOnlySpan<float> tones = [0.08f, 0.15f, 0.92f, 0.5f, 0.05f, 0.98f, 0.7f, 0.2f];
+        return tones[(int)(MathF.Max(0f, t) * 8.5f / (2f * MathF.PI)) % tones.Length];
+    }
+
+    /// <summary>Twelve frames of synthetic speech with varied tones, two per syllable (attack, then decay).</summary>
+    private static void SpeechStrip(string dir, Desk desk, bool useBackdrop)
+    {
+        var run = new Run(desk, 1f, useBackdrop);
+        run.Show(OverlayMode.Listening);
+        run.Advance(0.7f);
+        Func<float, float> level = t => Speech(0.20f, t);
+        var frames = new List<(int W, int H, byte[] Rgb)>();
+        for (var i = 0; i < 12; i++)
+        {
+            run.Advance(0f);
+            for (var s = 0; s < 6; s++) run.Step(level, StripTone);
+            frames.Add(Compose(run, desk));
+            for (var s = 0; s < 5; s++) run.Step(level, StripTone);
+        }
+
+        var suffix = useBackdrop ? string.Empty : "-NO-BACKDROP";
+        Sheet(Path.Combine(dir, $"speech-strip-{desk.ToString().ToLowerInvariant()}{suffix}.png"), frames, 4);
     }
 
     private static void Sheet(string path, List<(int W, int H, byte[] Rgb)> frames, int columns)

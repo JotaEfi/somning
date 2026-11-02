@@ -39,6 +39,12 @@ public sealed partial class DropRenderer
     private float[] waveUpper = [], waveCenter = [], waveLower = [];
     private Blob blob0, blob1, blob2, blob3, blob4;
 
+    /// <summary>
+    /// Visual style (an id from <see cref="DropStyles"/>), selectable at runtime from the settings window. Every style
+    /// draws both the listening drop and its matching transcribing drop. Read once per frame on the render thread.
+    /// </summary>
+    public string Style { get; set; } = DropStyles.Classic;
+
     /// <summary>Highest DPI scale shaded at native resolution; above it the glass is shaded at 100% and upscaled.</summary>
     public float NativeDpiLimit { get; init; } = DefaultNativeDpiLimit;
 
@@ -103,7 +109,7 @@ public sealed partial class DropRenderer
     private void RenderGlass(Span<uint> pixels, int width, int height, float dpiScale, in DropFrame frame, float noticeHalfWidth,
         BackdropTexture? backdrop, float backdropMix, float pixelScale, float restCenterY, float edgeY)
     {
-        var scene = new Scene(frame, width, restCenterY, edgeY, dpiScale, noticeHalfWidth, backdrop, backdropMix, pixelScale);
+        var scene = new Scene(frame, width, restCenterY, edgeY, dpiScale, noticeHalfWidth, backdrop, backdropMix, pixelScale, StyleKindOf(Style));
         if (scene.NeutralMix < 0.999f)
         {
             DropPalette.Blend(colors, frame.TranscribeMix, frame.NoticeMix);
@@ -364,7 +370,7 @@ public sealed partial class DropRenderer
         return px;
     }
 
-    private Px ShadeGlass(in Scene s, float dx, float dy, float dyl, float nx, float ny, float u)
+    private Px ShadeGlassClassic(in Scene s, float dx, float dy, float dyl, float nx, float ny, float u)
     {
         var u2 = u * u;
         var nz = FastMath.Sqrt(MathF.Max(0f, 1f - u2));
@@ -536,6 +542,26 @@ public sealed partial class DropRenderer
             gloss += topBand * 0.30f;
         }
 
+        // Voice-reactive reflections (listening only): a sky band sloshing along the top, a bounce band along the
+        // bottom and a caustic focus inside the lower rim. Phoneme onsets flash them; brighter tones tighten them.
+        var react = s.VoiceEnergy * (1f - s.NoticeMix) * (1f - s.TranscribeMix * 0.6f);
+        if (react > 0.01f)
+        {
+            var slosh = FastMath.Sin(sx * (4.5f + 4f * s.Tone) - s.SlosPhase);
+            var skyY = -0.50f + 0.07f * slosh * s.VoiceEnergy;
+            var sky = (sy - skyY) / (0.075f - 0.03f * s.Tone);
+            var skyShape = 1f / (1f + sky * sky) * MathF.Max(0f, 1f - sx * sx * 0.9f) * FastMath.Smooth((u - 0.25f) / 0.4f);
+            var bounceY = 0.62f - 0.05f * FastMath.Sin(sx * 5f + s.SlosPhase * 0.8f) * s.VoiceEnergy;
+            var floor = (sy - bounceY) / 0.06f;
+            var floorShape = 1f / (1f + floor * floor) * MathF.Max(0f, 1f - sx * sx) * FastMath.Smooth((u - 0.30f) / 0.4f);
+            var cx = (sx - 0.25f * FastMath.Sin(s.SlosPhase * 0.5f)) / 0.34f;
+            var cy = (sy - 0.46f) / 0.13f;
+            var caustic = MathF.Max(0f, 1f - (cx * cx + cy * cy));
+            caustic *= caustic;
+            var flash = 0.55f + 1.1f * s.Impact;
+            gloss += react * flash * (0.42f * skyShape + 0.30f * floorShape + 0.50f * caustic);
+        }
+
         gloss = Math.Min(1f, gloss) * s.GlossScale;
         return Px.Add(px, gloss, gloss, gloss, gloss);
     }
@@ -588,10 +614,12 @@ public sealed partial class DropRenderer
         public readonly float InvBoxW, InvBoxH, InvHalfWidth, Lean;
         public readonly float L1x, L1y, L2x, L2y, L3x, L3y, L4x, L4y;
         public readonly float LiquidGain, TranscribeMix, NoticeMix, RotCos, RotSin, HighlightSpread, GlossScale;
-        public readonly float Curve, RejectLen2, Wobble, WobblePhase, NeutralMix, VoiceEnergy;
+        public readonly float Curve, RejectLen2, Wobble, WobblePhase, NeutralMix, VoiceEnergy, Tone, Impact, SlosPhase;
         public readonly float GlowRange, GlowAlpha, GlowR, GlowG, GlowB;
         public readonly float ShadowOffset, ShadowRadius, ShadowSoftness, ShadowAlpha, ShadowR, ShadowG, ShadowB;
         public readonly float ContactTop, ContactY, InvContactRx, InvContactRy, ContactAlpha;
+        public readonly StyleKind Kind;
+        public readonly DropFrame F;   // the whole frame, for styles that need voice/wave fields the shared fields do not carry
         public readonly BackdropTexture? Tex;
         public readonly float BackdropMix, BackdropX0, BackdropY0, BackdropSx, BackdropSy, RefractReach, EnvReach;
 
@@ -599,8 +627,10 @@ public sealed partial class DropRenderer
         public readonly float PoolCy, InvPoolRx, InvPoolRy, PoolMin, GooK, GooLowK, GooReach;
 
         public Scene(in DropFrame f, int width, float restCenterY, float edgeY, float dpi, float noticeHalfWidth,
-            BackdropTexture? tex, float backdropMix, float pixelScale)
+            BackdropTexture? tex, float backdropMix, float pixelScale, StyleKind kind = StyleKind.Classic)
         {
+            Kind = kind;
+            F = f;
             CenterX = width / 2f;
             CenterY = edgeY + (restCenterY - edgeY) * f.Rise;
 
@@ -615,7 +645,7 @@ public sealed partial class DropRenderer
             HalfHeight = (orbHalfH + (noticeHalfH - orbHalfH) * m) * f.Scale;
             HalfWidth = (orbHalfW + (noticeHalfW - orbHalfW) * m) * f.Scale;
             // Elongated drops get elliptical end caps (organic) that tighten into a true capsule for the notice.
-            CoreHalfLength = Math.Max(0f, HalfWidth - HalfHeight) * (0.5f + 0.5f * m);
+            CoreHalfLength = Math.Max(0f, HalfWidth - HalfHeight) * (0.3f + 0.7f * m);
             var capRx = Math.Max(1f, HalfWidth - CoreHalfLength);
             InvHalfWidth = 1f / Math.Max(1f, HalfWidth);
             Lean = f.Lean;
@@ -648,6 +678,9 @@ public sealed partial class DropRenderer
             WobblePhase = f.Time * 1.7f + f.RipplePhase * 0.35f;
             NeutralMix = (1f - f.TranscribeMix) * (1f - f.NoticeMix);
             VoiceEnergy = Math.Min(1f, f.Level + 0.65f * f.Ripple);
+            Tone = f.Tone;
+            Impact = f.Impact;
+            SlosPhase = f.Time * 2.3f + f.RipplePhase * 0.5f;
 
             GlowRange = GlowRangeDip * dpi;
             var rejectLen = 1.3f + GlowRange / EdgeScale;

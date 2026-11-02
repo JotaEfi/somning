@@ -5,34 +5,14 @@ using System.Windows.Media;
 
 namespace Somning.Platform.Windows.Settings;
 
-/// <summary>Native acrylic on a borderless HWND, clipped to the same rounded rectangle as the WPF glass.</summary>
+/// <summary>
+/// DWM blur behind a borderless HWND, limited to the same rounded rectangle as the WPF glass. The blur region
+/// (hRgnBlur) clips the blur itself; the Windows 10 acrylic accent ignored the window region and left square corners.
+/// </summary>
 internal static class GlassBackdrop
 {
-    private const int WcaAccentPolicy = 19;
-    private const int AccentEnableAcrylicBlurBehind = 4;
-    private const int AccentDisabled = 0;
-
-    // Original composite opacity: tint 102/255 plus fill 80/96/120 over that tint.
-    // New tint is 61/255; XAML fill 38/46/57 produces approximately 60% of the old
-    // composite opacity at each stop (rather than multiplying both layers by .6).
-    private const uint DarkTint = 0x3D0B0A09;
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct AccentPolicy
-    {
-        public int AccentState;
-        public int AccentFlags;
-        public uint GradientColor;
-        public int AnimationId;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct WindowCompositionAttributeData
-    {
-        public int Attribute;
-        public nint Data;
-        public int SizeOfData;
-    }
+    private const uint DwmBbEnable = 0x1;
+    private const uint DwmBbBlurRegion = 0x2;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct Margins
@@ -40,12 +20,21 @@ internal static class GlassBackdrop
         public int Left, Right, Top, Bottom;
     }
 
-    [DllImport("user32.dll")]
-    private static extern int SetWindowCompositionAttribute(nint hwnd, ref WindowCompositionAttributeData data);
+    [StructLayout(LayoutKind.Sequential)]
+    private struct BlurBehind
+    {
+        public uint Flags;
+        public int Enable;
+        public nint RegionBlur;
+        public int TransitionOnMaximized;
+    }
+
     [DllImport("dwmapi.dll")]
     private static extern int DwmExtendFrameIntoClientArea(nint hwnd, ref Margins margins);
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(nint hwnd, int attribute, ref int value, int size);
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmEnableBlurBehindWindow(nint hwnd, ref BlurBehind blurBehind);
     [DllImport("gdi32.dll")]
     private static extern nint CreateRoundRectRgn(int left, int top, int right, int bottom, int widthEllipse, int heightEllipse);
     [DllImport("gdi32.dll")]
@@ -74,7 +63,8 @@ internal static class GlassBackdrop
             _ = DwmSetWindowAttribute(hwnd, 2, ref disableNonClientRendering, sizeof(int));
             var margins = new Margins { Left = -1, Right = -1, Top = -1, Bottom = -1 };
             _ = DwmExtendFrameIntoClientArea(hwnd, ref margins);
-            return SetAccent(hwnd, AccentEnableAcrylicBlurBehind, DarkTint);
+            // Blurs the whole client until ClipToRoundedRect supplies the glass region.
+            return SetBlur(hwnd, enable: true, region: 0);
         }
         catch (Exception ex) when (ex is EntryPointNotFoundException or DllNotFoundException)
         {
@@ -86,49 +76,53 @@ internal static class GlassBackdrop
     {
         var hwnd = new WindowInteropHelper(window).Handle;
         if (hwnd == 0) return;
-        try { SetAccent(hwnd, AccentDisabled, 0); }
+        try { SetBlur(hwnd, enable: false, region: 0); }
         catch (Exception ex) when (ex is EntryPointNotFoundException or DllNotFoundException) { }
     }
 
-    /// <summary>Clips the actual native surface, including acrylic, to the WPF glass bounds in device pixels.</summary>
+    /// <summary>Clips the blur and the native window to the WPF glass bounds in device pixels.</summary>
     public static void ClipToRoundedRect(Window window, Rect glassDip, double radiusDip)
     {
         var hwnd = new WindowInteropHelper(window).Handle;
         var source = HwndSource.FromHwnd(hwnd);
         if (hwnd == 0 || source?.CompositionTarget is null) return;
         var m = source.CompositionTarget.TransformToDevice;
-        var region = CreateRoundRectRgn(
-            (int)Math.Round(glassDip.Left * m.M11), (int)Math.Round(glassDip.Top * m.M22),
-            (int)Math.Round(glassDip.Right * m.M11), (int)Math.Round(glassDip.Bottom * m.M22),
-            (int)Math.Round(radiusDip * 2 * m.M11), (int)Math.Round(radiusDip * 2 * m.M22));
+        var region = CreateGlassRegion(m, glassDip, radiusDip);
         if (region == 0) return;
         var existing = CreateRectRgn(0, 0, 0, 0);
+        nint blurRegion = 0;
         try
         {
             // Setting a region sends another window-position notification. Comparing
             // native regions prevents endless reapplication while still repairing a reset.
             if (existing != 0 && GetWindowRgn(hwnd, existing) != 0 && EqualRgn(existing, region))
                 return;
+            // SetWindowRgn keeps the region it receives, so the blur gets its own copy.
+            blurRegion = CreateGlassRegion(m, glassDip, radiusDip);
+            if (blurRegion != 0) SetBlur(hwnd, enable: true, region: blurRegion);
             if (SetWindowRgn(hwnd, region, true) != 0) region = 0; // The system now owns it.
         }
         finally
         {
             if (existing != 0) DeleteObject(existing);
             if (region != 0) DeleteObject(region);
+            if (blurRegion != 0) DeleteObject(blurRegion);
         }
     }
 
-    private static bool SetAccent(nint hwnd, int state, uint tint)
+    private static nint CreateGlassRegion(Matrix m, Rect glassDip, double radiusDip) => CreateRoundRectRgn(
+        (int)Math.Round(glassDip.Left * m.M11), (int)Math.Round(glassDip.Top * m.M22),
+        (int)Math.Round(glassDip.Right * m.M11), (int)Math.Round(glassDip.Bottom * m.M22),
+        (int)Math.Round(radiusDip * 2 * m.M11), (int)Math.Round(radiusDip * 2 * m.M22));
+
+    private static bool SetBlur(nint hwnd, bool enable, nint region)
     {
-        var policy = new AccentPolicy { AccentState = state, AccentFlags = 2, GradientColor = tint };
-        var size = Marshal.SizeOf<AccentPolicy>();
-        var ptr = Marshal.AllocHGlobal(size);
-        try
+        var blur = new BlurBehind
         {
-            Marshal.StructureToPtr(policy, ptr, false);
-            var data = new WindowCompositionAttributeData { Attribute = WcaAccentPolicy, Data = ptr, SizeOfData = size };
-            return SetWindowCompositionAttribute(hwnd, ref data) != 0;
-        }
-        finally { Marshal.FreeHGlobal(ptr); }
+            Flags = DwmBbEnable | (region != 0 ? DwmBbBlurRegion : 0u),
+            Enable = enable ? 1 : 0,
+            RegionBlur = region,
+        };
+        return DwmEnableBlurBehindWindow(hwnd, ref blur) == 0;
     }
 }

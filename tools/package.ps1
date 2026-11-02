@@ -1,7 +1,8 @@
 param(
     [ValidateSet('Release','Debug')][string]$Configuration = 'Release',
     [string]$OutputDir,
-    [switch]$WithHarness
+    [switch]$WithHarness,
+    [ValidateSet('x64','arm64')][string]$Arch = 'x64'
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -9,6 +10,7 @@ $root = Split-Path $PSScriptRoot -Parent
 $publishRoot = [IO.Path]::GetFullPath((Join-Path $root 'publish')).TrimEnd([char]92)
 if (-not $OutputDir) {
     $leaf = if ($WithHarness) { 'package-harness' } else { 'package' }
+    if ($Arch -ne 'x64') { $leaf += "-$Arch" }
     $OutputDir = Join-Path $publishRoot $leaf
 }
 $output = [IO.Path]::GetFullPath($OutputDir).TrimEnd([char]92)
@@ -31,14 +33,14 @@ $engineOutput = Join-Path $output 'engine'
 [xml]$props = Get-Content -LiteralPath (Join-Path $root 'Directory.Build.props') -Raw
 $version = [string]$props.Project.PropertyGroup.Version
 if (-not $version) { throw 'Version is missing from Directory.Build.props.' }
-Write-Host "Packaging Somning $version ($Configuration), output: $output"
+Write-Host "Packaging Somning $version ($Configuration, $Arch), output: $output"
 if (Test-Path -LiteralPath $output) { Remove-Item -LiteralPath $output -Recurse -Force }
 New-Item -ItemType Directory -Path $output,$engineOutput -Force | Out-Null
 Push-Location $root
 try {
-    & dotnet publish src/Somning.App -c $Configuration -r win-x64 --self-contained -o $output "-p:SomningHarness=$harnessValue" -p:PublishSingleFile=false --nologo
+    & dotnet publish src/Somning.App -c $Configuration -r win-$Arch --self-contained -o $output "-p:SomningHarness=$harnessValue" -p:PublishSingleFile=false --nologo
     if ($LASTEXITCODE -ne 0) { throw "App publish failed: $LASTEXITCODE" }
-    & dotnet publish src/Somning.Engine -c $Configuration -r win-x64 --self-contained -o $engineOutput "-p:SomningHarness=$harnessValue" -p:PublishSingleFile=false --nologo
+    & dotnet publish src/Somning.Engine -c $Configuration -r win-$Arch --self-contained -o $engineOutput "-p:SomningHarness=$harnessValue" -p:PublishSingleFile=false --nologo
     if ($LASTEXITCODE -ne 0) { throw "Engine publish failed: $LASTEXITCODE" }
 } finally { Pop-Location }
 foreach ($script in 'install.ps1','uninstall.ps1','fetch-models.ps1') {
@@ -58,11 +60,7 @@ foreach ($doc in 'PRIVACIDADE.md','INSTALACAO.md','RELEASE-1.0.md') {
 @'
 @echo off
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0fetch-models.ps1" -Only ggml-large-v3-turbo-q5_0.bin,ggml-large-v3-turbo-q8_0.bin,ggml-silero-v6.2.0.bin
-if errorlevel 1 (
-  echo Falha ao baixar ou verificar os modelos. Confira a internet e tente novamente.
-  pause
-  exit /b 1
-)
+if errorlevel 1 echo Os modelos nao foram baixados. Use Baixar-modelos.cmd depois para tentar de novo.
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1" -LaunchAfterInstall
 pause
 '@ | Set-Content -LiteralPath (Join-Path $output 'Instalar.cmd') -Encoding ASCII
@@ -75,14 +73,14 @@ $appExe = Join-Path $output 'Somning.App.exe'
 $engineExe = Join-Path $engineOutput 'Somning.Engine.exe'
 if (-not (Test-Path -LiteralPath $appExe) -or -not (Test-Path -LiteralPath $engineExe)) { throw 'Missing app or engine executable.' }
 $manifest = [ordered]@{
-    Package = 'Somning'; Version = $version; Configuration = $Configuration; Runtime = 'win-x64'
+    Package = 'Somning'; Version = $version; Configuration = $Configuration; Runtime = "win-$Arch"
     Harness = [bool]$WithHarness; BuiltAt = [DateTime]::UtcNow.ToString('o')
     AppExecutable = 'Somning.App.exe'; EngineExecutable = 'engine\Somning.Engine.exe'
     ModelsIncluded = $false; AuthenticodeSigned = $false
 }
 $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $output 'package-manifest.json') -Encoding UTF8
 $suffix = if ($WithHarness) { '-harness' } else { '' }
-$zip = Join-Path $publishRoot "Somning-$version-win-x64$suffix.zip"
+$zip = Join-Path $publishRoot "Somning-$version-win-$Arch$suffix.zip"
 Compress-Archive -LiteralPath $output -DestinationPath $zip -Force -CompressionLevel Optimal
 $digest = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
 "$digest  $([IO.Path]::GetFileName($zip))" | Set-Content -LiteralPath ($zip + '.sha256') -Encoding ASCII

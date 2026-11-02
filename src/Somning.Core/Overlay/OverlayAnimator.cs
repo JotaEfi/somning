@@ -16,6 +16,7 @@ public sealed class OverlayAnimator
 
     private const float TwoPi = MathF.PI * 2f;
     private const float EggBulge = 0.035f;
+    private const float MaxLobe = 0.034f;
     private const float MaxStretch = 0.06f;   // contained squash/stretch: lively, not rubbery
 
     private readonly VoiceLevelNormalizer normalizer = new();
@@ -33,6 +34,7 @@ public sealed class OverlayAnimator
     private float seconds;
     private float fade;
     private float rawLevel;
+    private float rawTone;
     private float level;
     private float transcribeMix;
     private float noticeMix;
@@ -84,6 +86,7 @@ public sealed class OverlayAnimator
             fade = 0f;
             level = 0f;
             rawLevel = 0f;
+            rawTone = 0f;
             normalizer.Reset();
             dropStretch.Reset();
             drive = 0f;
@@ -108,6 +111,9 @@ public sealed class OverlayAnimator
 
     /// <summary>Latest raw voice level from the level tracker (0..1). Only used while listening.</summary>
     public void SetLevel(float rawVoiceLevel) => rawLevel = Math.Clamp(rawVoiceLevel, 0f, 1f);
+
+    /// <summary>Latest voice brightness (0..1, zero-crossing based). Only used while listening.</summary>
+    public void SetTone(float rawVoiceTone) => rawTone = Math.Clamp(rawVoiceTone, 0f, 1f);
 
     /// <summary>Advances the animation; returns true while more frames are needed.</summary>
     public bool Tick(float deltaSeconds)
@@ -169,7 +175,7 @@ public sealed class OverlayAnimator
         level += (drive - level) * (1f - MathF.Exp(-dt / tau));
 
         // Onsets kick the squash/stretch spring so words "hit" the drop.
-        stretch.Velocity += (level - previous) * 2.4f;
+        stretch.Velocity += (level - previous) * 3.4f;
     }
 
     private void StepPalette(float dt)
@@ -185,16 +191,18 @@ public sealed class OverlayAnimator
         var breathAmount = mode == OverlayMode.Notice ? 0f : mode == OverlayMode.Transcribing ? 0.03f : 0.02f;
         var breath = breathAmount * MathF.Sin(TwoPi * seconds / breathPeriod);
         radius.Step(1f + breath + 0.035f * level, 22f, 0.62f, dt);
-        stretch.Step(0f, 19f, 0.55f, dt);
+        stretch.Step(0f, 22f, 0.38f, dt);
         stretch.Value = Math.Clamp(stretch.Value, -MaxStretch, MaxStretch);
         morph.Step(mode == OverlayMode.Notice ? 1f : 0f, 13f, 0.85f, dt);
         var idle = mode == OverlayMode.Transcribing ? 0.5f + 0.5f * MathF.Sin(TwoPi * seconds / 1.5f) : 0f;
-        dropStretch.Update(drive, idle, dt);
+        dropStretch.Update(drive, idle, dt, rawTone);
 
         var calm = mode == OverlayMode.Notice ? 0.25f : 1f;
-        amp2.Step(calm * (0.008f + 0.014f * level), 22f, 0.65f, dt);
-        amp3.Step(calm * (0.006f + 0.010f * level), 24f, 0.65f, dt);
-        amp4.Step(calm * (0.003f + 0.005f * level), 26f, 0.65f, dt);
+        // Rim lobes react to each impact; capped so a loud voice stays contained (see Loud_voice_keeps_the_shape_contained).
+        var hit = dropStretch.Impact;
+        amp2.Step(calm * Math.Min(MaxLobe, 0.008f + 0.014f * level + 0.012f * hit), 22f, 0.5f, dt);
+        amp3.Step(calm * Math.Min(MaxLobe, 0.006f + 0.010f * level + 0.010f * hit), 24f, 0.5f, dt);
+        amp4.Step(calm * (0.003f + 0.005f * level + 0.008f * hit), 26f, 0.5f, dt);
 
         phase2 = Wrap(phase2 + dt * (0.9f + 2.4f * level));
         phase3 = Wrap(phase3 - dt * (1.3f + 3.0f * level));
@@ -217,8 +225,8 @@ public sealed class OverlayAnimator
         var m = Math.Clamp(morph.Value, 0f, 1f);
         var lobeScale = 1f - m;
         var egg = EggBulge * lobeScale;
-        var a2 = amp2.Value * lobeScale;
-        var a3 = amp3.Value * lobeScale;
+        var a2 = Math.Min(MaxLobe, amp2.Value) * lobeScale;
+        var a3 = Math.Min(MaxLobe, amp3.Value) * lobeScale;
         var a4 = amp4.Value * lobeScale;
 
         frame = new DropFrame(
@@ -246,6 +254,11 @@ public sealed class OverlayAnimator
             emerge.Neck,
             emerge.TopTail,
             emerge.BottomTail,
-            emerge.Pool);
+            emerge.Pool,
+            dropStretch.Tone * lobeScale,
+            dropStretch.Impact * lobeScale,
+            dropStretch.Slosh * lobeScale,
+            dropStretch.Wave0Front, dropStretch.Wave0Amp * lobeScale,
+            dropStretch.Wave1Front, dropStretch.Wave1Amp * lobeScale);
     }
 }

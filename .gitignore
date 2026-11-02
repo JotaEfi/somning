@@ -1,12 +1,51 @@
-.maestri/
+# --- Saída de build e empacotamento -------------------------------------------
 bin/
 obj/
 publish/
 TestResults/
+*.zip
+*.sha256
+*.nupkg
+
+# --- Modelos e dados do usuário (nunca vão para o repositório) -----------------
 *.bin
+*.part
 models/
+recordings/
+settings.json
+
+# --- Ambientes e ferramentas locais --------------------------------------------
 .venv/
+.vs/
+.idea/
+.vscode/
 *.user
+*.suo
+*.userprefs
+*.DotSettings.user
+
+# --- Ferramentas de agentes e planejamento (locais) ----------------------------
+.maestri/
 .gsd/
 .planning/
 .claude/
+.codex/
+.antigravity/
+.opencode/
+opencode.json
+
+# --- Sobras de patch, backup e arquivos temporários ----------------------------
+*.orig
+*.rej
+*.bak
+*.tmp
+*.log
+Thumbs.db
+.DS_Store
+Desktop.ini
+
+# --- Cobertura e relatórios de teste -------------------------------------------
+coverage/
+*.trx
+*.coverage
+*.cobertura.xml

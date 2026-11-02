@@ -20,7 +20,7 @@
    <GradientStop Color="#F21B1E23" Offset="0"/><GradientStop Color="#F4111316" Offset="0.45"/><GradientStop Color="#F70A0B0D" Offset="1"/>
   </LinearGradientBrush>
   <LinearGradientBrush x:Key="GlassFillAcrylic" StartPoint="0,0" EndPoint="0,1">
-   <GradientStop Color="#261B1E23" Offset="0"/><GradientStop Color="#2E111316" Offset="0.45"/><GradientStop Color="#390A0B0D" Offset="1"/>
+   <GradientStop Color="#D91B1E23" Offset="0"/><GradientStop Color="#E0111316" Offset="0.45"/><GradientStop Color="#EB0A0B0D" Offset="1"/>
   </LinearGradientBrush>
   <LinearGradientBrush x:Key="RimBrush" StartPoint="0,0" EndPoint="0,1">
    <GradientStop Color="#D9EEF1F4" Offset="0"/><GradientStop Color="#59B9C0C7" Offset="0.12"/><GradientStop Color="#26FFFFFF" Offset="0.55"/><GradientStop Color="#73C9CED4" Offset="1"/>
@@ -62,7 +62,7 @@
    </ControlTemplate></ToggleButton.Template></ToggleButton>
    <Border x:Name="FocusRim" BorderThickness="1" CornerRadius="9" BorderBrush="Transparent" IsHitTestVisible="False"/>
    <ContentPresenter IsHitTestVisible="False" Margin="11,0,34,0" VerticalAlignment="Center" Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"/>
-   <Popup Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" VerticalOffset="4" AllowsTransparency="False" Focusable="False" PopupAnimation="Fade">
+   <Popup Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" VerticalOffset="4" AllowsTransparency="True" Focusable="False" PopupAnimation="Fade">
     <Border MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}" MaxHeight="240" Background="#F5131518" BorderBrush="#4DC9CED4" BorderThickness="1" CornerRadius="10" Padding="0,4" Margin="0,0,8,8">
      <Border.Effect><DropShadowEffect BlurRadius="16" ShadowDepth="4" Opacity="0.55" Color="Black"/></Border.Effect>
      <ScrollViewer VerticalScrollBarVisibility="Auto"><ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/></ScrollViewer>
@@ -205,7 +205,19 @@
       <StackPanel>
        <CheckBox x:Name="AutoPasteCheck" Content="_Colar automaticamente no aplicativo ativo" AutomationProperties.Name="Colar automaticamente no aplicativo ativo"/>
        <Rectangle Height="1" Fill="#14FFFFFF"/>
-       <CheckBox x:Name="SoundCuesCheck" Content="Sons de _início e término" AutomationProperties.Name="Sons de início e término"/>
+       <Grid>
+        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <CheckBox x:Name="SoundCuesCheck" Content="Sons de _início e término" AutomationProperties.Name="Sons de início e término" VerticalAlignment="Center" Margin="0,8,16,8"/>
+        <ComboBox x:Name="SoundThemeCombo" Grid.Column="1" Width="170" Height="40" Margin="0,8" VerticalAlignment="Center" AutomationProperties.Name="Tema dos sons"/>
+       </Grid>
+       <Rectangle Height="1" Fill="#14FFFFFF"/>
+       <Grid>
+        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <TextBlock Text="Estilo da gota" Foreground="#DDE2E7" VerticalAlignment="Center" Margin="2,2,28,2"/>
+        <ComboBox x:Name="DropStyleCombo" Grid.Column="1" Width="170" Height="34" Margin="0,5" VerticalAlignment="Center" AutomationProperties.Name="Estilo da gota"/>
+       </Grid>
+       <Rectangle Height="1" Fill="#14FFFFFF"/>
+       <CheckBox x:Name="PreserveLanguageCheck" Content="_Manter o idioma do teclado ao usar o atalho" AutomationProperties.Name="Manter o idioma do teclado ao usar o atalho"/>
        <Rectangle Height="1" Fill="#14FFFFFF"/>
        <CheckBox x:Name="StartWithWindowsCheck" Content="Iniciar com o _Windows" AutomationProperties.Name="Iniciar com o Windows"/>
       </StackPanel>

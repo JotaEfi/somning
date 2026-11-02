@@ -54,6 +54,7 @@ public sealed class OverlayWindowManager : IOverlayView
     private readonly BackdropCache backdrop;
     private BackdropRegion monitorBounds;
     private float lastDt;
+    private float pendingTone;
     private float pendingLevel = -1f;   // written by the audio thread, read by the render thread; -1 = none
     private long lastTick;
     private bool windowShown;
@@ -103,6 +104,10 @@ public sealed class OverlayWindowManager : IOverlayView
         // Picked up by the next animation frame; no queue traffic per audio buffer.
         Volatile.Write(ref pendingLevel, AudioLevelTracker.LevelFromBars(waveformBars));
     }
+
+    public void SetDropStyle(string styleId) => renderer.Style = DropStyles.Normalize(styleId);
+
+    public void UpdateVoiceTone(float brightness) => Volatile.Write(ref pendingTone, brightness);
 
     public void ShowTranscribing() => PostModelUpdate(OverlayViewModel.CreateTranscribing());
 
@@ -313,7 +318,11 @@ public sealed class OverlayWindowManager : IOverlayView
         lastDt = Math.Clamp(dt, 0f, OverlayAnimator.MaxDeltaSeconds);
 
         var level = Volatile.Read(ref pendingLevel);
-        if (level >= 0f && animator.Frame.Mode == OverlayMode.Listening) animator.SetLevel(level);
+        if (level >= 0f && animator.Frame.Mode == OverlayMode.Listening)
+        {
+            animator.SetLevel(level);
+            animator.SetTone(Volatile.Read(ref pendingTone));
+        }
 
         if (!animator.Tick(dt)) return;
         DrawFrame();

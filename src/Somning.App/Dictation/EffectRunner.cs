@@ -106,11 +106,13 @@ public sealed class EffectRunner : IAsyncDisposable
             case Deliver deliver:
                 history.Record(deliver.Text);
                 getOverlay?.Invoke()?.Hide();
+                soundPlayer?.PlayDone();
                 Track(DeliverAsync(deliver.Id, ct => DeliverToTargetAsync(deliver, ct)));
                 break;
             case CopyOnly copy:
                 history.Record(copy.Text);
                 getOverlay?.Invoke()?.Hide();
+                soundPlayer?.PlayDone();
                 Track(DeliverAsync(copy.Id, ct => output.CopyOnlyAsync(copy.Text, ct)));
                 break;
             case EmitMetrics emit:
@@ -467,6 +469,7 @@ public sealed class EffectRunner : IAsyncDisposable
             inner.Write(pcm16kMonoS16);
             tracker.Update(pcm16kMonoS16);
             overlay.UpdateWaveform(tracker.GenerateWaveformBars(5));
+            overlay.UpdateVoiceTone(AudioLevelCalculator.ComputeBrightness(pcm16kMonoS16));
         }
     }
 }

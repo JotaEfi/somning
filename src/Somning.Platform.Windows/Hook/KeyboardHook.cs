@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using Somning.Core.Trigger;
 using Somning.Core.Settings;
 using Somning.Platform.Windows.Input;
+using Somning.Platform.Windows.Paste;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.UI.WindowsAndMessaging;
@@ -37,6 +38,18 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
     /// <summary>HOTK-04: Predicate returning whether dictation recording is actively in progress.</summary>
     public Func<bool>? IsRecordingActive { get; set; }
     public Func<bool>? ShouldIgnoreHotkeys { get; set; }
+
+    private volatile bool preserveInputLanguage;
+
+    /// <summary>
+    /// When set, starting a dictation with Ctrl+Shift+Space does not switch the Windows input language. Nothing is
+    /// written to the system settings: the switch is blocked only while the hotkey is pressed.
+    /// </summary>
+    public bool PreserveInputLanguage
+    {
+        get => preserveInputLanguage;
+        set => preserveInputLanguage = value;
+    }
 
     public void ConfigureHotkeys(UserSettings settings)
     {
@@ -219,6 +232,7 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
                 targetLayoutWindow = foreground;
                 targetLayoutThreadId = foreground == 0 ? 0 : GetWindowThreadProcessId(foreground, out _);
                 layoutBeforeChord = targetLayoutThreadId == 0 ? 0 : GetKeyboardLayout(targetLayoutThreadId);
+                if (PreserveInputLanguage) MaskLayoutSwitch();
             }
             sink.TryWrite(new KeyEvent(kind, Environment.TickCount64, data->dwExtraInfo == InputMarkers.Test));
             if (kind == KeyEventKind.TriggerUp)
@@ -246,6 +260,22 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
     /// outside the hook thread so all remaining key-up callbacks drain first, then post a request for the captured
     /// HKL to the original foreground window. This restores the exact layout even when more than two are installed.
     /// </summary>
+    /// <summary>
+    /// Windows switches the input language when Ctrl+Shift is released with no other key pressed in between. The
+    /// hook swallows the Space, so Windows never sees a key there. An unassigned virtual key (0xE8) breaks that
+    /// sequence; the Mask marker lets the hook ignore the injected pair.
+    /// </summary>
+    private void MaskLayoutSwitch()
+    {
+        const ushort UnassignedKey = 0xE8;
+        _ = MaskSender.Send([
+            new KeyboardInput(UnassignedKey, false, InputMarkers.Mask),
+            new KeyboardInput(UnassignedKey, true, InputMarkers.Mask),
+        ]);
+    }
+
+    private static readonly WindowsKeyboardInputSender MaskSender = new();
+
     private void QueueLayoutVerification()
     {
         var hookThread = threadId;

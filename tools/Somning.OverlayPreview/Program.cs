@@ -57,7 +57,7 @@ namespace Somning.OverlayPreview
                 var (w, baseH) = DropLayout.WindowSize(dpi, false, 0f);
                 var h = baseH + (int)(54 * dpi);
                 var buffer = new uint[w * h];
-                var renderer = new DropRenderer();
+                var renderer = new DropRenderer { Style = DropStyles.Normalize(Environment.GetEnvironmentVariable("SOMNING_DROP_STYLE")) };
                 double worst = 0, total = 0;
                 var frames = 0;
                 for (var rep = 0; rep < 20; rep++)
@@ -114,7 +114,7 @@ namespace Somning.OverlayPreview
             var caption = mode == OverlayMode.Transcribing ? DropLayout.CreateCaption(OverlayText.Transcribing, dpi) : TextMask.Empty;
             var (w, h) = DropLayout.WindowSize(dpi, mode == OverlayMode.Notice, text.Width);
             var buffer = new uint[w * h];
-            var renderer = new DropRenderer();
+            var renderer = new DropRenderer { Style = DropStyles.Normalize(Environment.GetEnvironmentVariable("SOMNING_DROP_STYLE")) };
             var animator = new OverlayAnimator();
             var cache = new BackdropCache(useBackdrop ? new FuncBackdropSource((x, y) => FakeDesktops.Pixel(Desk.Wallpaper, (int)(x / dpi), (int)(y / dpi))) : null);
             var bounds = new BackdropRegion(0, 0, (int)(1920 * dpi), (int)(1080 * dpi));

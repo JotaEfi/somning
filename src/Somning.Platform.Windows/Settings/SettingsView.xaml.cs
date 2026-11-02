@@ -4,6 +4,7 @@ using System.Windows.Media;
 using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Threading;
+using Somning.Core.Overlay;
 using Somning.Core.Settings;
 using Somning.Platform.Windows.Audio;
 
@@ -119,7 +120,26 @@ public partial class SettingsView : Window
         VocabularyBox.Text = original.CustomVocabulary ?? string.Empty;
         AutoPasteCheck.IsChecked = original.AutoPaste;
         SoundCuesCheck.IsChecked = original.PlaySoundCues;
+        PopulateSoundThemes(original.SoundTheme);
+        PopulateDropStyles(original.DropStyle);
+        PreserveLanguageCheck.IsChecked = original.PreserveInputLanguage;
         StartWithWindowsCheck.IsChecked = original.StartWithWindows;
+    }
+
+    private void PopulateSoundThemes(string selectedTheme)
+    {
+        foreach (var (id, displayName) in SoundThemes.All)
+            SoundThemeCombo.Items.Add(new ComboBoxItem { Content = displayName, Tag = id });
+        var index = SoundThemes.All.Select(theme => theme.Id).ToList().IndexOf(selectedTheme);
+        SoundThemeCombo.SelectedIndex = index < 0 ? 0 : index;
+    }
+
+    private void PopulateDropStyles(string selectedStyle)
+    {
+        foreach (var (id, displayName) in DropStyles.All)
+            DropStyleCombo.Items.Add(new ComboBoxItem { Content = displayName, Tag = id });
+        var index = DropStyles.All.Select(style => style.Id).ToList().IndexOf(DropStyles.Normalize(selectedStyle));
+        DropStyleCombo.SelectedIndex = index < 0 ? 0 : index;
     }
 
     private void UpdateProviderHint()
@@ -153,6 +173,9 @@ public partial class SettingsView : Window
             MicrophoneDeviceId = deviceId,
             AutoPaste = AutoPasteCheck.IsChecked == true,
             PlaySoundCues = SoundCuesCheck.IsChecked == true,
+            SoundTheme = (SoundThemeCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? SoundThemes.Classic,
+            DropStyle = DropStyles.Normalize((DropStyleCombo.SelectedItem as ComboBoxItem)?.Tag as string),
+            PreserveInputLanguage = PreserveLanguageCheck.IsChecked == true,
             StartWithWindows = StartWithWindowsCheck.IsChecked == true,
             CustomVocabulary = VocabularyBox.Text.Trim(),
             CloudProvider = providerIndex > 0 && providerIndex < ProviderIds.Length ? ProviderIds[providerIndex] : "none",

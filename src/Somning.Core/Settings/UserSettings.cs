@@ -15,6 +15,8 @@ public sealed record UserSettings
     public string DropStyle { get; init; } = Overlay.DropStyles.Classic;
     public bool PreserveInputLanguage { get; init; }
     public bool StartWithWindows { get; init; } = false;
+    /// <summary>Looks for new GitHub releases once a day and asks before installing one.</summary>
+    public bool CheckForUpdates { get; init; } = true;
     public string CustomVocabulary { get; init; } = string.Empty;
     public int TapThresholdMs { get; init; } = 300;
     public string Language { get; init; } = "pt-BR";

@@ -9,6 +9,7 @@ using Somning.Core.Dictation;
 using Somning.Core.Engine;
 using Somning.Core.Model;
 using Somning.Core.Output;
+using Somning.App.Update;
 using Somning.Core.Overlay;
 using Somning.Core.Paths;
 using Somning.Core.Ports;
@@ -129,6 +130,7 @@ public sealed class AppComposition : IAsyncDisposable
     public UserSettings Settings { get; private set; }
     public DynamicAudioSourceFactory? DynamicAudioFactory { get; }
     public IOverlayView? Overlay { get; private set; }
+    private UpdateService? updateService;
     public ISettingsWindow? SettingsWindow { get; private set; }
     public TrayIconManager? Tray { get; private set; }
 
@@ -186,6 +188,9 @@ public sealed class AppComposition : IAsyncDisposable
         Tray.OpenSettingsRequested += () => OpenSettings();
         Tray.RepasteLastRequested += () => _ = RepasteLastAsync();
         Tray.OpenLogsRequested += () => OpenLogsDirectory();
+        updateService = new UpdateService(() => Settings.CheckForUpdates, () => Host.State.Capture is not null, requestShutdown);
+        Tray.CheckForUpdatesRequested += () => _ = updateService.CheckNowAsync();
+        updateService.StartBackground();
         Tray.ExitRequested += () => shutdownCallback?.Invoke();
     }
 
@@ -428,6 +433,7 @@ public sealed class AppComposition : IAsyncDisposable
 #if SOMNING_TEST_HARNESS
         if (Pipe is not null) await Pipe.DisposeAsync().ConfigureAwait(false);
 #endif
+        updateService?.Dispose();
         SoundPlayer.Dispose();
         SettingsWindow?.Dispose();
         Overlay?.Dispose();

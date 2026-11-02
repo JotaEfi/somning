@@ -2,6 +2,10 @@
 
 ## Não lançado
 
+- **Atualização automática:** o Somning confere uma vez por dia (e pelo menu da bandeja, **Verificar atualizações**) se há uma versão nova no GitHub. Se houver, pergunta; ao aceitar, baixa o instalador, confere o SHA-256 publicado pelo GitHub, atualiza em silêncio e abre o Somning de novo. Nunca instala sem confirmação e nunca avisa durante um ditado. Pode ser desligada em Configurações → **Avisar sobre atualizações**. Para ser oferecida, a release precisa ser estável (não pré-lançamento) e trazer `Somning-X.Y.Z-Setup.exe` (e `-arm64-`).
+- **Instalador:** os modelos de voz são baixados por uma página do próprio instalador, sem abrir o PowerShell. Se falhar, a mensagem ensina o atalho e o comando.
+- **Sons:** sem estalo no fim (fade-out e saída de áudio sempre aberta) e o Bipe padrão agora toca em máquinas onde o `Console.Beep` era mudo.
+- **Configurações:** vidro mais transparente, mudanças aplicadas na hora (sem Salvar) e o atalho de ditado funciona com a janela aberta.
 - **Cinco estilos de gota**, escolhidos em **Configurações → Estilo da gota** e aplicados na hora: Clássica (padrão), Gel reativo, Mercúrio, Lente líquida e Água escura. Todos mantêm a faixa escura reativa no centro e têm uma bolha de transcrição do mesmo estilo.
 - A gota responde ao **tom** da voz e ao **impacto** de cada início de fala, além do volume: o corpo se achata mais nas laterais, desliza para o lado conforme o tom e ondas viajam da borda ao centro a cada fonema.
 - **Windows 11 e ARM64:** instaladores separados (`Somning-1.0.3-Setup.exe` para x64 e `Somning-1.0.3-arm64-Setup.exe` para ARM64). Em ARM64 o ditado local roda na CPU, sem Vulkan. Ainda não validado em hardware real.

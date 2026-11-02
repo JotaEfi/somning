@@ -137,6 +137,7 @@ public partial class SettingsView : Window
         PopulateDropStyles(original.DropStyle);
         PreserveLanguageCheck.IsChecked = original.PreserveInputLanguage;
         StartWithWindowsCheck.IsChecked = original.StartWithWindows;
+        CheckForUpdatesCheck.IsChecked = original.CheckForUpdates;
     }
 
     private void WireLiveApply()
@@ -148,7 +149,7 @@ public partial class SettingsView : Window
         ProviderCombo.SelectionChanged += Changed;
         SoundThemeCombo.SelectionChanged += Changed;
         DropStyleCombo.SelectionChanged += Changed;
-        foreach (var check in new[] { AutoPasteCheck, SoundCuesCheck, PreserveLanguageCheck, StartWithWindowsCheck })
+        foreach (var check in new[] { AutoPasteCheck, SoundCuesCheck, PreserveLanguageCheck, StartWithWindowsCheck, CheckForUpdatesCheck })
         {
             check.Checked += Changed;
             check.Unchecked += Changed;
@@ -224,6 +225,7 @@ public partial class SettingsView : Window
             DropStyle = DropStyles.Normalize((DropStyleCombo.SelectedItem as ComboBoxItem)?.Tag as string),
             PreserveInputLanguage = PreserveLanguageCheck.IsChecked == true,
             StartWithWindows = StartWithWindowsCheck.IsChecked == true,
+            CheckForUpdates = CheckForUpdatesCheck.IsChecked == true,
             CustomVocabulary = VocabularyBox.Text.Trim(),
             CloudProvider = providerIndex > 0 && providerIndex < ProviderIds.Length ? ProviderIds[providerIndex] : "none",
             EncryptedApiKey = encrypted

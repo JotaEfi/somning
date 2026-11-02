@@ -59,6 +59,8 @@ Name: "{userdesktop}\Somning"; Filename: "{app}\Somning.App.exe"; Tasks: desktop
 
 [Run]
 Filename: "{app}\Somning.App.exe"; Description: "Abrir Somning"; Flags: nowait postinstall skipifsilent
+; Silent update started by the app itself (/RELAUNCH=1): open Somning again when it finishes.
+Filename: "{app}\Somning.App.exe"; Parameters: "--tray"; Flags: nowait; Check: ShouldRelaunch
 
 [Code]
 { Somning is a tray app: it has no window for Windows Restart Manager to close, so silent installs (and updates over a
@@ -72,6 +74,11 @@ begin
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM Somning.Engine.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   { Give Windows a moment to release the file handles of the stopped processes. }
   Sleep(800);
+end;
+
+function ShouldRelaunch(): Boolean;
+begin
+  Result := WizardSilent and (ExpandConstant('{param:RELAUNCH|0}') = '1');
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;

@@ -72,7 +72,7 @@
 
   <!-- CheckBox restyled as a glass switch: label left, knob right. -->
   <Style TargetType="CheckBox"><Setter Property="Foreground" Value="#DDE2E7"/><Setter Property="FocusVisualStyle" Value="{x:Null}"/><Setter Property="Cursor" Value="Hand"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CheckBox">
-   <Grid Background="Transparent" MinHeight="32"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+   <Grid Background="Transparent" MinHeight="28"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
     <ContentPresenter VerticalAlignment="Center" RecognizesAccessKey="True" Margin="2,0,12,0"/>
     <Border x:Name="Track" Grid.Column="1" Width="38" Height="22" CornerRadius="11" Background="{StaticResource InsetFill}" BorderBrush="{StaticResource InsetRim}" BorderThickness="1" VerticalAlignment="Center">
      <Ellipse x:Name="Knob" Width="16" Height="16" HorizontalAlignment="Left" Margin="2,0,0,0">
@@ -207,8 +207,8 @@
        <Rectangle Height="1" Fill="#14FFFFFF"/>
        <Grid>
         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-        <CheckBox x:Name="SoundCuesCheck" Content="Sons de _início e término" AutomationProperties.Name="Sons de início e término" VerticalAlignment="Center" Margin="0,8,16,8"/>
-        <ComboBox x:Name="SoundThemeCombo" Grid.Column="1" Width="170" Height="40" Margin="0,8" VerticalAlignment="Center" AutomationProperties.Name="Tema dos sons"/>
+        <CheckBox x:Name="SoundCuesCheck" Content="Sons de _início e término" AutomationProperties.Name="Sons de início e término" VerticalAlignment="Center" Margin="0,5,16,5"/>
+        <ComboBox x:Name="SoundThemeCombo" Grid.Column="1" Width="170" Height="34" Margin="0,5" VerticalAlignment="Center" AutomationProperties.Name="Tema dos sons"/>
        </Grid>
        <Rectangle Height="1" Fill="#14FFFFFF"/>
        <Grid>
@@ -220,6 +220,8 @@
        <CheckBox x:Name="PreserveLanguageCheck" Content="_Manter o idioma do teclado ao usar o atalho" AutomationProperties.Name="Manter o idioma do teclado ao usar o atalho"/>
        <Rectangle Height="1" Fill="#14FFFFFF"/>
        <CheckBox x:Name="StartWithWindowsCheck" Content="Iniciar com o _Windows" AutomationProperties.Name="Iniciar com o Windows"/>
+       <Rectangle Height="1" Fill="#14FFFFFF"/>
+       <CheckBox x:Name="CheckForUpdatesCheck" Content="Avisar sobre _atualizações" AutomationProperties.Name="Avisar sobre atualizações"/>
       </StackPanel>
      </Border>
     </StackPanel>

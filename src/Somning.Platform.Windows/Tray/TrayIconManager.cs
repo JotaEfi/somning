@@ -52,6 +52,7 @@ public sealed class TrayIconManager : IDisposable
     public event Action? OpenSettingsRequested;
     public event Action? RepasteLastRequested;
     public event Action? OpenLogsRequested;
+    public event Action? CheckForUpdatesRequested;
     public event Action? ExitRequested;
 
     public Func<bool>? CanRepaste { get; set; }
@@ -267,6 +268,7 @@ public sealed class TrayIconManager : IDisposable
             }
             Add("_Configurações…", () => OpenSettingsRequested?.Invoke());
             Add("Colar _último", () => RepasteLastRequested?.Invoke(), CanRepaste?.Invoke() ?? false);
+            Add("Verificar _atualizações", () => CheckForUpdatesRequested?.Invoke());
             Add("Abrir pasta de _logs", () => OpenLogsRequested?.Invoke());
             menu.Items.Add(new System.Windows.Controls.Separator { Style = separatorStyle });
             Add("_Sair", () => ExitRequested?.Invoke());

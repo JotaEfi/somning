@@ -125,7 +125,7 @@ public sealed class SettingsViewRenderTests
                 Assert.Equal(new HotkeyBinding(KeyModifiers.Alt, key.ToString()), button.Tag);
                 Assert.True(view.ProcessHotkeyInput(key, Key.None, ModifierKeys.None, isDown: false));
                 Assert.False(view.ProcessHotkeyInput(key, Key.None, ModifierKeys.None, isDown: true));
-                Assert.Equal(0, saved);
+                Assert.Equal(1, saved); // live apply: exactly one apply per capture, none for repeats
             }
             return true;
         });

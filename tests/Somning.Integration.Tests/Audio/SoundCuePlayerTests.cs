@@ -56,23 +56,49 @@ public sealed class SoundCuePlayerTests
     }
 
     [Fact]
-    public async Task Classic_theme_uses_the_original_beep_cues()
+    public async Task Classic_theme_plays_synthesized_wav_cues_instead_of_the_console_beep()
     {
-        var cues = new ConcurrentBag<(int Frequency, int Duration)>();
-        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var player = new SoundCuePlayer(_ => { }, (frequency, duration) =>
+        var played = 0;
+        var completion = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var player = new SoundCuePlayer(stream =>
         {
-            cues.Add((frequency, duration));
-            if (cues.Count == 2) completion.TrySetResult(true);
+            if (Interlocked.Increment(ref played) == 2) completion.TrySetResult(ReadRiffTag(stream));
         });
 
         Assert.Equal(SoundThemes.Classic, player.Theme);
         player.PlayStart();
         player.PlayCancel();
 
-        await completion.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-        Assert.Contains((SoundCuePlayer.StartFrequency, SoundCuePlayer.ShortCueMs), cues);
-        Assert.Contains((SoundCuePlayer.CancelFrequency, SoundCuePlayer.CancelCueMs), cues);
+        Assert.Equal("RIFF", await completion.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public void Tone_ends_on_silence_so_the_cue_cannot_click()
+    {
+        var wav = CueWave.Tone(SoundCuePlayer.StartFrequency, SoundCuePlayer.ShortCueMs);
+
+        var lastSample = BitConverter.ToInt16(wav, wav.Length - 2);
+        var lastToneSample = BitConverter.ToInt16(wav, 44 + (CueWave.SampleRate * SoundCuePlayer.ShortCueMs / 1000 - 1) * 2);
+        Assert.Equal(0, lastSample);
+        Assert.True(Math.Abs((int)lastToneSample) < 200);
+    }
+
+    [Fact]
+    public void Every_embedded_wav_is_smoothed_to_end_on_silence()
+    {
+        var assembly = typeof(SoundCuePlayer).Assembly;
+        foreach (var (id, _) in SoundThemes.All.Where(theme => theme.Id != SoundThemes.Classic))
+        {
+            foreach (var cue in Enum.GetValues<SoundCue>())
+            {
+                using var stream = assembly.GetManifestResourceStream(SoundThemes.ResourceName(id, cue))!;
+                using var copy = new MemoryStream();
+                stream.CopyTo(copy);
+                var smoothed = CueWave.Smooth(copy.ToArray());
+                Assert.Equal(0, BitConverter.ToInt16(smoothed, smoothed.Length - 2));
+                Assert.True(smoothed.Length > copy.Length);
+            }
+        }
     }
 
     [Fact]

@@ -34,6 +34,8 @@ public sealed class SettingsWindowManager : ISettingsWindow
 
     public bool IsOpen => isOpen;
 
+    public bool IsCapturingHotkey => view?.IsCapturingHotkey == true;
+
     public void Show(UserSettings currentSettings, Action<UserSettings> onSave)
     {
         if (disposed) return;

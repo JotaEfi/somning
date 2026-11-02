@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Threading.Channels;
 using Serilog;
 using Somning.App.Dictation;
@@ -84,7 +84,8 @@ public sealed class AppComposition : IAsyncDisposable
         Hook = new KeyboardHook(keys.Writer);
         Hook.ConfigureHotkeys(Settings);
         Hook.PreserveInputLanguage = Settings.PreserveInputLanguage;
-        Hook.ShouldIgnoreHotkeys = () => SettingsWindow?.IsOpen == true;
+        // Only the shortcut recorder needs the keyboard to itself; dictation stays usable with Settings open.
+        Hook.ShouldIgnoreHotkeys = () => SettingsWindow?.IsCapturingHotkey == true;
         // Pre-hook snapshot (H9): paths/IDs only; repair, model wait and inference all happen later in RecoveryService.
         Snapshot = RecoverySnapshot.Take(SomningPaths.RecordingsDir);
         // Live captures run normally while admission is pending; only transcription/copy dispatch waits (D-05, D-11).

@@ -23,8 +23,10 @@ public enum SoundCue
 }
 
 /// <summary>
-/// Plays the cues of the selected theme on the thread pool. The classic theme uses the Windows beep; the others play
-/// embedded WAV files. Capturing audio never waits for the cue, and a machine whose audio stack rejects the sound
+/// Plays the cues of the selected theme on the thread pool. Every cue, including the classic beeps, is a WAV played
+/// through the default output device: <c>Console.Beep</c> is silent in a windowless app on many machines. Cues are
+/// conditioned (fade-out and silent tail) so they never end in a click, and play one at a time so a cue is never cut
+/// off by the next one. Capturing audio never waits for a cue, and a machine whose audio stack rejects the sound
 /// simply stays silent instead of failing the dictation.
 /// </summary>
 public sealed class SoundCuePlayer : ISoundCuePlayer
@@ -40,17 +42,16 @@ public sealed class SoundCuePlayer : ISoundCuePlayer
     public const int CancelCueMs = 140;
 
     private readonly Action<Stream> play;
-    private readonly Action<int, int> beep;
+    private readonly object playLock = new();
     private volatile bool enabled = true;
     private volatile string theme = DefaultTheme;
 
-    public SoundCuePlayer() : this(null, null) { }
+    public SoundCuePlayer() : this(null) { }
 
-    /// <summary>Both delegates are injectable so tests can observe cues without touching the audio device.</summary>
-    public SoundCuePlayer(Action<Stream>? play, Action<int, int>? beep = null)
+    /// <summary>The playback delegate is injectable so tests can observe cues without touching the audio device.</summary>
+    public SoundCuePlayer(Action<Stream>? play)
     {
         this.play = play ?? PlayWav;
-        this.beep = beep ?? Console.Beep;
     }
 
     public bool Enabled
@@ -79,45 +80,37 @@ public sealed class SoundCuePlayer : ISoundCuePlayer
         if (!enabled) return;
 
         var selected = theme;
-        var player = play;
-        var tone = beep;
         _ = Task.Run(() =>
         {
             try
             {
-                if (selected == SoundThemes.Classic)
-                {
-                    PlayClassic(cue, tone);
-                    return;
-                }
-                PlayEmbedded(SoundThemes.ResourceName(selected, cue), player);
+                var wav = selected == SoundThemes.Classic ? ClassicWav(cue) : EmbeddedWav(SoundThemes.ResourceName(selected, cue));
+                if (wav is null) return;
+                // SoundPlayer restarts the process-wide sound on every call: serialising avoids cutting a cue mid-wave.
+                lock (playLock) play(new MemoryStream(wav));
             }
-            catch (Exception ex) when (ex is IOException or InvalidOperationException or PlatformNotSupportedException)
+            catch (Exception ex) when (ex is IOException or InvalidOperationException or PlatformNotSupportedException or TimeoutException)
             {
                 // Cues are cosmetic: a broken audio stack must never fail a dictation.
             }
         });
     }
 
-    private static void PlayClassic(SoundCue cue, Action<int, int> beep)
+    private static byte[] ClassicWav(SoundCue cue) => cue switch
     {
-        switch (cue)
-        {
-            case SoundCue.Start: beep(StartFrequency, ShortCueMs); break;
-            case SoundCue.Stop: beep(StopFrequency, ShortCueMs); break;
-            case SoundCue.Done: beep(DoneFrequency, ShortCueMs); break;
-            case SoundCue.Cancel: beep(CancelFrequency, CancelCueMs); break;
-        }
-    }
+        SoundCue.Start => CueWave.Tone(StartFrequency, ShortCueMs),
+        SoundCue.Stop => CueWave.Tone(StopFrequency, ShortCueMs),
+        SoundCue.Done => CueWave.Tone(DoneFrequency, ShortCueMs),
+        _ => CueWave.Tone(CancelFrequency, CancelCueMs),
+    };
 
-    private static void PlayEmbedded(string resource, Action<Stream> play)
+    private static byte[]? EmbeddedWav(string resource)
     {
         using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resource);
-        if (stream is null) return;
+        if (stream is null) return null;
         using var copy = new MemoryStream();
         stream.CopyTo(copy);
-        copy.Position = 0;
-        play(copy);
+        return CueWave.Smooth(copy.ToArray());
     }
 
     private static void PlayWav(Stream wav)

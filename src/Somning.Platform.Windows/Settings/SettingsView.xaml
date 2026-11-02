@@ -9,18 +9,18 @@
 
   <Color x:Key="AccentColor">#5CE1E6</Color>
   <SolidColorBrush x:Key="Accent" Color="{StaticResource AccentColor}"/>
-  <SolidColorBrush x:Key="Muted" Color="#8E99A4"/>
-  <SolidColorBrush x:Key="Caption" Color="#6F7A85"/>
-  <SolidColorBrush x:Key="InsetFill" Color="#59000000"/>
+  <SolidColorBrush x:Key="Muted" Color="#AAB5C0"/>
+  <SolidColorBrush x:Key="Caption" Color="#94A0AC"/>
+  <SolidColorBrush x:Key="InsetFill" Color="#40000000"/>
   <SolidColorBrush x:Key="InsetRim" Color="#2EFFFFFF"/>
   <SolidColorBrush x:Key="InsetRimHover" Color="#4DFFFFFF"/>
 
   <!-- Glass body. Opaque-ish fallback; GlassBackdrop swaps in GlassFillAcrylic when real blur is active. -->
   <LinearGradientBrush x:Key="GlassFillSolid" StartPoint="0,0" EndPoint="0,1">
-   <GradientStop Color="#F21B1E23" Offset="0"/><GradientStop Color="#F4111316" Offset="0.45"/><GradientStop Color="#F70A0B0D" Offset="1"/>
+   <GradientStop Color="#E61B1E23" Offset="0"/><GradientStop Color="#E8111316" Offset="0.45"/><GradientStop Color="#EC0A0B0D" Offset="1"/>
   </LinearGradientBrush>
   <LinearGradientBrush x:Key="GlassFillAcrylic" StartPoint="0,0" EndPoint="0,1">
-   <GradientStop Color="#D91B1E23" Offset="0"/><GradientStop Color="#E0111316" Offset="0.45"/><GradientStop Color="#EB0A0B0D" Offset="1"/>
+   <GradientStop Color="#A01D232B" Offset="0"/><GradientStop Color="#94141920" Offset="0.45"/><GradientStop Color="#B00B0E12" Offset="1"/>
   </LinearGradientBrush>
   <LinearGradientBrush x:Key="RimBrush" StartPoint="0,0" EndPoint="0,1">
    <GradientStop Color="#D9EEF1F4" Offset="0"/><GradientStop Color="#59B9C0C7" Offset="0.12"/><GradientStop Color="#26FFFFFF" Offset="0.55"/><GradientStop Color="#73C9CED4" Offset="1"/>
@@ -123,7 +123,7 @@
     <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Disc" Property="BorderBrush" Value="{StaticResource Accent}"/></Trigger>
    </ControlTemplate.Triggers>
   </ControlTemplate></Setter.Value></Setter></Style>
-  <Style x:Key="Panel" TargetType="Border"><Setter Property="Background" Value="#0DFFFFFF"/><Setter Property="BorderBrush" Value="#1AFFFFFF"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="12"/><Setter Property="Padding" Value="12,10"/><Setter Property="Margin" Value="0,0,0,14"/></Style>
+  <Style x:Key="Panel" TargetType="Border"><Setter Property="Background" Value="#14FFFFFF"/><Setter Property="BorderBrush" Value="#26FFFFFF"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="12"/><Setter Property="Padding" Value="12,10"/><Setter Property="Margin" Value="0,0,0,14"/></Style>
  </Window.Resources>
 
  <!-- Outer margin leaves room for the soft drop shadow (fallback mode). -->
@@ -136,7 +136,7 @@
    <Border x:Name="GlassBody" CornerRadius="22" Background="{DynamicResource GlassFill}"/>
    <!-- Inner shadow: dark blurred rim pulled inside the glass. -->
    <Grid x:Name="InnerShadowHost" IsHitTestVisible="False">
-    <Border CornerRadius="22" BorderBrush="#B3000000" BorderThickness="7" Margin="-3"><Border.Effect><BlurEffect Radius="14"/></Border.Effect></Border>
+    <Border CornerRadius="22" BorderBrush="#59000000" BorderThickness="7" Margin="-3"><Border.Effect><BlurEffect Radius="14"/></Border.Effect></Border>
    </Grid>
    <!-- Specular top sheen and highlight streak, like the drop. -->
    <Border CornerRadius="22,22,60,60" Height="120" VerticalAlignment="Top" IsHitTestVisible="False">
@@ -201,7 +201,7 @@
 
     <StackPanel Grid.Row="4" Margin="0,0,0,16">
      <TextBlock Text="COMPORTAMENTO" Style="{StaticResource SectionCaption}"/>
-     <Border Background="#0DFFFFFF" BorderBrush="#1AFFFFFF" BorderThickness="1" CornerRadius="12" Padding="12,3">
+     <Border Background="#14FFFFFF" BorderBrush="#26FFFFFF" BorderThickness="1" CornerRadius="12" Padding="12,3">
       <StackPanel>
        <CheckBox x:Name="AutoPasteCheck" Content="_Colar automaticamente no aplicativo ativo" AutomationProperties.Name="Colar automaticamente no aplicativo ativo"/>
        <Rectangle Height="1" Fill="#14FFFFFF"/>
@@ -224,10 +224,9 @@
      </Border>
     </StackPanel>
 
-    <Grid Grid.Row="5"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-     <TextBlock x:Name="SaveHint" Text="Enter salva · Esc fecha" Foreground="{StaticResource Caption}" VerticalAlignment="Center" FontSize="11.5"/>
-     <Button x:Name="CancelButton" Grid.Column="1" Content="_Cancelar" IsCancel="True" Margin="0,0,8,0"/>
-     <Button x:Name="SaveButton" Grid.Column="2" Content="_Salvar" IsDefault="True" Style="{StaticResource PrimaryButton}" Padding="20,0"/>
+    <Grid Grid.Row="5"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+     <TextBlock x:Name="SaveHint" Text="As mudanças são aplicadas na hora · Esc fecha" Foreground="{StaticResource Caption}" VerticalAlignment="Center" FontSize="11.5"/>
+     <Button x:Name="DoneButton" Grid.Column="1" Content="_Concluído" IsCancel="True" IsDefault="True" Style="{StaticResource PrimaryButton}" Padding="20,0"/>
     </Grid>
    </Grid>
   </Grid>

@@ -19,7 +19,7 @@ public partial class SettingsView : Window
     private static readonly string[] ProviderIds = ["none", "groq", "openai"];
 
     private readonly ISettingsProtector protector;
-    private readonly UserSettings original;
+    private UserSettings original;
     private readonly IReadOnlyList<AudioDeviceInfo> devices;
 
     private Button? capturingHotkey;
@@ -27,7 +27,14 @@ public partial class SettingsView : Window
     private HwndSource? nativeSource;
     private bool geometryQueued;
     private bool isClosed;
+    private volatile bool isCapturing;
+    private readonly DispatcherTimer applyTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
+
+    /// <summary>Raised every time the form changes to a valid state: settings apply live, there is no Save step.</summary>
     public event Action<UserSettings>? Saved;
+
+    /// <summary>True while the shortcut recorder waits for keys; the global hook must then leave the keyboard alone.</summary>
+    public bool IsCapturingHotkey => isCapturing;
 
     public SettingsView(UserSettings settings, IReadOnlyList<AudioDeviceInfo> devices, ISettingsProtector protector)
     {
@@ -38,8 +45,8 @@ public partial class SettingsView : Window
         UseBackdropFill(acrylic: false);
         Populate();
         ProviderCombo.SelectionChanged += (_, _) => UpdateProviderHint();
-        SaveButton.Click += (_, _) => { if (!ValidateHotkeys()) return; Saved?.Invoke(BuildUpdated()); Close(); };
-        CancelButton.Click += (_, _) => Close();
+        DoneButton.Click += (_, _) => Close();
+        WireLiveApply();
         CloseButton.Click += (_, _) => Close();
         Header.MouseLeftButtonDown += (_, e) => { if (e.ButtonState == MouseButtonState.Pressed) DragMove(); };
         Glass.SizeChanged += (_, _) => UpdateGlassGeometry();
@@ -52,7 +59,13 @@ public partial class SettingsView : Window
         };
         ContentRendered += (_, _) => QueueGlassGeometry();
         DpiChanged += (_, _) => QueueGlassGeometry();
-        Closed += (_, _) => { isClosed = true; nativeSource?.RemoveHook(NativeWindowMessage); };
+        Closed += (_, _) =>
+        {
+            isClosed = true;
+            isCapturing = false;
+            nativeSource?.RemoveHook(NativeWindowMessage);
+        };
+        Closing += (_, _) => FlushPendingApply();
         ActivateHotkeyButton.Click += (_, _) => BeginHotkeyCapture(ActivateHotkeyButton);
         CancelHotkeyButton.Click += (_, _) => BeginHotkeyCapture(CancelHotkeyButton);
         ConfirmHotkeyButton.Click += (_, _) => BeginHotkeyCapture(ConfirmHotkeyButton);
@@ -126,6 +139,40 @@ public partial class SettingsView : Window
         StartWithWindowsCheck.IsChecked = original.StartWithWindows;
     }
 
+    private void WireLiveApply()
+    {
+        applyTimer.Tick += (_, _) => { applyTimer.Stop(); ApplyNow(); };
+        void Changed(object? sender, EventArgs e) => ApplyNow();
+        void Typing(object? sender, EventArgs e) { applyTimer.Stop(); applyTimer.Start(); }
+        DeviceCombo.SelectionChanged += Changed;
+        ProviderCombo.SelectionChanged += Changed;
+        SoundThemeCombo.SelectionChanged += Changed;
+        DropStyleCombo.SelectionChanged += Changed;
+        foreach (var check in new[] { AutoPasteCheck, SoundCuesCheck, PreserveLanguageCheck, StartWithWindowsCheck })
+        {
+            check.Checked += Changed;
+            check.Unchecked += Changed;
+        }
+        VocabularyBox.TextChanged += Typing;
+        ApiKeyBox.PasswordChanged += Typing;
+    }
+
+    private void FlushPendingApply()
+    {
+        if (!applyTimer.IsEnabled) return;
+        applyTimer.Stop();
+        ApplyNow();
+    }
+
+    /// <summary>Applies the current form when valid. Invalid shortcut combinations are shown but never applied.</summary>
+    private void ApplyNow()
+    {
+        if (isClosed || !ValidateHotkeys()) return;
+        var updated = BuildUpdated();
+        original = updated;
+        Saved?.Invoke(updated);
+    }
+
     private void PopulateSoundThemes(string selectedTheme)
     {
         foreach (var (id, displayName) in SoundThemes.All)
@@ -194,6 +241,7 @@ public partial class SettingsView : Window
     {
         EndHotkeyCapture();
         capturingHotkey = button;
+        isCapturing = true;
         button.Content = "Pressione a combinação…";
         if (requestFocus) button.Focus();
         HotkeyHint.Text = "Pressione as teclas juntas. Clique fora para desistir.";
@@ -204,6 +252,7 @@ public partial class SettingsView : Window
         if (capturingHotkey is not null)
             SetHotkeyButton(capturingHotkey, (HotkeyBinding)capturingHotkey.Tag);
         capturingHotkey = null;
+        isCapturing = false;
         HotkeyHint.Text = "Clique para alterar. Ativar: segure ou toque. Confirmar: encerrar e transcrever.";
     }
 
@@ -243,7 +292,7 @@ public partial class SettingsView : Window
         SetHotkeyButton(target, new HotkeyBinding(modifiers, key.ToString()));
         capturingHotkey = null;
         EndHotkeyCapture();
-        ValidateHotkeys();
+        ApplyNow();
         return true;
     }
 
@@ -258,7 +307,6 @@ public partial class SettingsView : Window
         var valid = HotkeyBindings.TryValidate(candidate, out var error);
         HotkeyValidation.Text = error ?? string.Empty;
         HotkeyValidation.Visibility = valid ? Visibility.Collapsed : Visibility.Visible;
-        SaveButton.IsEnabled = valid;
         return valid;
     }
 

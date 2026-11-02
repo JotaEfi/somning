@@ -71,3 +71,33 @@ jobs:
           if (-not (Test-Path 'out/arm64/engine/runtimes/win-arm64/whisper.dll')) {
             throw 'Falta o whisper.dll nativo para win-arm64.'
           }
+
+  testes-de-renderizacao:
+    name: Testes de renderização da gota e das Configurações (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Instalar o SDK do .NET indicado em global.json
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Compilar
+        run: dotnet build Somning.sln -c Release -warnaserror --nologo
+
+      # Só as classes que renderizam em memória (sem foco, teclado nem desktop real).
+      - name: Testes de renderização
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem tests/Somning.Integration.Tests/bin/Release -Recurse -Filter Somning.Integration.Tests.exe | Select-Object -First 1
+          & $exe.FullName `
+            -class Somning.Integration.Tests.Overlay.DropStyleContractTests `
+            -class Somning.Integration.Tests.Overlay.OverlayBackdropRenderTests `
+            -class Somning.Integration.Tests.Overlay.OverlayAnimatedRenderTests `
+            -class Somning.Integration.Tests.Overlay.OverlayAnimationTests `
+            -class Somning.Integration.Tests.Settings.SettingsViewRenderTests
+          if ($LASTEXITCODE -ne 0) { throw "Testes de renderização falharam (código $LASTEXITCODE)." }
+

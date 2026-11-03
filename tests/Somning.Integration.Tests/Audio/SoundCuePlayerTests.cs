@@ -102,6 +102,38 @@ public sealed class SoundCuePlayerTests
     }
 
     [Fact]
+    public void Embedded_wavs_have_their_abrupt_decay_step_removed()
+    {
+        var assembly = typeof(SoundCuePlayer).Assembly;
+        foreach (var (id, _) in SoundThemes.All.Where(theme => theme.Id != SoundThemes.Classic))
+        {
+            foreach (var cue in Enum.GetValues<SoundCue>())
+            {
+                using var stream = assembly.GetManifestResourceStream(SoundThemes.ResourceName(id, cue))!;
+                using var copy = new MemoryStream();
+                stream.CopyTo(copy);
+                var original = ToSamples(copy.ToArray());
+                var step = CueWave.FindStep(original);
+                Assert.True(step > 0, $"{id}/{cue}: the shipped file is expected to contain a step");
+
+                var smoothed = ToSamples(CueWave.Smooth(copy.ToArray()));
+                Assert.All(smoothed.Skip(step), sample => Assert.Equal(0, sample));
+                var from = Math.Max(1, step - CueWave.SampleRate / 100);
+                var largestJump = Enumerable.Range(from, smoothed.Length - from).Max(i => Math.Abs(smoothed[i] - smoothed[i - 1]));
+                var originalJump = Enumerable.Range(from, original.Length - from).Max(i => Math.Abs(original[i] - original[i - 1]));
+                Assert.True(largestJump < 150 && largestJump <= originalJump, $"{id}/{cue}: jump {largestJump} (was {originalJump})");
+            }
+        }
+    }
+
+    private static short[] ToSamples(byte[] wav)
+    {
+        var samples = new short[(wav.Length - 44) / 2];
+        for (var i = 0; i < samples.Length; i++) samples[i] = BitConverter.ToInt16(wav, 44 + i * 2);
+        return samples;
+    }
+
+    [Fact]
     public void Unknown_theme_falls_back_to_the_default_theme()
     {
         var player = new SoundCuePlayer(_ => { });

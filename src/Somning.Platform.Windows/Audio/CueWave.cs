@@ -16,6 +16,11 @@ internal static class CueWave
     private const int FadeInMs = 4;
     private const int FadeOutMs = 28;
     private const int TailSilenceMs = 90;
+    private const int StepWindowMs = 2;
+    private const int StepSearchStartMs = 100;
+    private const short StepMinLevel = 150;
+    private const short StepMaxLevel = 1500;
+    private const double StepDropRatio = 0.7;
 
     /// <summary>A sine tone with raised-cosine attack and release, followed by silence.</summary>
     public static byte[] Tone(int frequencyHz, int durationMs)
@@ -27,7 +32,7 @@ internal static class CueWave
             var value = Math.Sin(2 * Math.PI * frequencyHz * i / SampleRate) * ToneAmplitude;
             samples[i] = (short)Math.Round(value * short.MaxValue);
         }
-        return Build(Condition(samples));
+        return Build(Condition(samples, samples.Length));
     }
 
     /// <summary>
@@ -37,16 +42,45 @@ internal static class CueWave
     public static byte[] Smooth(byte[] wav)
     {
         if (!TryReadSamples(wav, out var samples)) return wav;
-        return Build(Condition(samples));
+        var step = FindStep(samples);
+        return Build(Condition(samples, step >= 0 ? step : samples.Length));
     }
 
-    private static short[] Condition(short[] samples)
+    /// <summary>
+    /// The shipped theme WAVs drop abruptly in level partway through their decay (for example from 458 to 134 of 32767),
+    /// which is heard as a click near the end of the cue. Returns the first sample of such a drop in the quiet tail, or
+    /// -1 when the decay is smooth.
+    /// </summary>
+    internal static int FindStep(short[] samples)
+    {
+        var window = SampleRate * StepWindowMs / 1000;
+        var count = samples.Length / window;
+        var envelope = new int[count];
+        for (var w = 0; w < count; w++)
+        {
+            var peak = 0;
+            for (var i = w * window; i < (w + 1) * window; i++) peak = Math.Max(peak, Math.Abs((int)samples[i]));
+            envelope[w] = peak;
+        }
+        for (var w = StepSearchStartMs / StepWindowMs; w < count; w++)
+        {
+            var before = envelope[w - 1];
+            if (before <= StepMinLevel || before >= StepMaxLevel || envelope[w] >= StepDropRatio * before) continue;
+            var stays = true;
+            for (var k = w; k < Math.Min(count, w + 10); k++) stays &= envelope[k] < 0.8 * before;
+            if (stays) return w * window;
+        }
+        return -1;
+    }
+
+    /// <summary>Keeps the first <paramref name="end"/> samples (fading out their last stretch), then silence.</summary>
+    private static short[] Condition(short[] samples, int end)
     {
         var result = new short[samples.Length + SampleRate * TailSilenceMs / 1000];
-        Array.Copy(samples, result, samples.Length);
-        Fade(result, 0, Math.Min(samples.Length, SampleRate * FadeInMs / 1000), fadeIn: true);
-        var fadeOut = Math.Min(samples.Length, SampleRate * FadeOutMs / 1000);
-        Fade(result, samples.Length - fadeOut, fadeOut, fadeIn: false);
+        Array.Copy(samples, result, end);
+        Fade(result, 0, Math.Min(end, SampleRate * FadeInMs / 1000), fadeIn: true);
+        var fadeOut = Math.Min(end, SampleRate * FadeOutMs / 1000);
+        Fade(result, end - fadeOut, fadeOut, fadeIn: false);
         return result;
     }
 

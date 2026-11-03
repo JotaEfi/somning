@@ -40,7 +40,30 @@ public sealed class UpdateService : IDisposable
     public static Version CurrentVersion =>
         Assembly.GetEntryAssembly()?.GetName().Version is { } v ? new Version(v.Major, v.Minor, Math.Max(v.Build, 0)) : new Version(0, 0, 0);
 
-    public void StartBackground() => _ = Task.Run(() => LoopAsync(stop.Token));
+    public void StartBackground()
+    {
+        _ = Task.Run(() => LoopAsync(stop.Token));
+        _ = Task.Run(DeleteOldInstallers);
+    }
+
+    /// <summary>Removes installers left by a previous update. The one that is still running (after a relaunch) is skipped.</summary>
+    private static void DeleteOldInstallers()
+    {
+        try
+        {
+            var directory = Path.Combine(SomningPaths.DataRoot, "updates");
+            if (!Directory.Exists(directory)) return;
+            foreach (var file in Directory.GetFiles(directory))
+            {
+                try { File.Delete(file); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Log.Debug(ex, "Could not clean the updates folder");
+        }
+    }
 
     /// <summary>Tray command: checks right away and always tells the person the result.</summary>
     public Task CheckNowAsync() => Task.Run(() => RunAsync(manual: true, stop.Token));

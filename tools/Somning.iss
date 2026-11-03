@@ -1,5 +1,5 @@
 ﻿#ifndef AppVersion
-  #define AppVersion "1.0.3"
+  #define AppVersion "1.0.4"
 #endif
 
 #ifndef Arch
@@ -114,7 +114,7 @@ end;
 
 function ModelPresent(Name, Hash: String): Boolean;
 begin
-  Result := FileExists(ModelsDir() + '' + Name) and (GetSHA256OfFile(ModelsDir() + '' + Name) = Hash);
+  Result := FileExists(ModelsDir() + '\' + Name) and (GetSHA256OfFile(ModelsDir() + '\' + Name) = Hash);
 end;
 
 function OnModelProgress(const Url, FileName: String; const Progress, ProgressMax: Int64): Boolean;
@@ -156,12 +156,12 @@ end;
 { Moves downloaded files from the temp folder into the models folder. }
 procedure MoveModel(Name: String);
 begin
-  if FileExists(ExpandConstant('{tmp}' + Name)) then
+  if FileExists(ExpandConstant('{tmp}\' + Name)) then
   begin
     ForceDirectories(ModelsDir());
-    DeleteFile(ModelsDir() + '' + Name);
-    if not RenameFile(ExpandConstant('{tmp}' + Name), ModelsDir() + '' + Name) then
-      CopyFile(ExpandConstant('{tmp}' + Name), ModelsDir() + '' + Name, False);
+    DeleteFile(ModelsDir() + '\' + Name);
+    if not RenameFile(ExpandConstant('{tmp}\' + Name), ModelsDir() + '\' + Name) then
+      CopyFile(ExpandConstant('{tmp}\' + Name), ModelsDir() + '\' + Name, False);
   end;
 end;
 

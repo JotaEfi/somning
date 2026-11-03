@@ -44,7 +44,7 @@ internal sealed class CueOutput : IDisposable
     {
         if (output is not null) return;
         mixer = new MixingSampleProvider(WaveFormat.CreateIeeeFloatWaveFormat(CueWave.SampleRate, 2)) { ReadFully = true };
-        var device = new WasapiPlayerBuilder().WithSharedMode().WithLatency(LatencyMs).WithDefaultDeviceStreamRouting().Build();
+        var device = new WasapiPlayerBuilder().WithSharedMode().WithLatency(LatencyMs).Build();
         device.PlaybackStopped += (_, _) => { lock (gate) { if (ReferenceEquals(output, device)) CloseLocked(); } };
         device.Init(new SampleToWaveProvider(mixer));
         device.Play();

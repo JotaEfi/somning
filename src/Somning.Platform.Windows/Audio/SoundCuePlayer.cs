@@ -1,4 +1,5 @@
 using System.IO;
+using System.Media;
 using System.Reflection;
 
 namespace Somning.Platform.Windows.Audio;
@@ -53,7 +54,7 @@ public sealed class SoundCuePlayer : ISoundCuePlayer, IDisposable
         if (play is null)
         {
             sharedOutput = new CueOutput();
-            this.play = sharedOutput.Play;
+            this.play = PlayWithFallback;
         }
         else
         {
@@ -62,6 +63,24 @@ public sealed class SoundCuePlayer : ISoundCuePlayer, IDisposable
     }
 
     public void Dispose() => sharedOutput?.Dispose();
+
+    /// <summary>The persistent stream is preferred; if it cannot open for any reason the cue still plays the classic way.</summary>
+    private void PlayWithFallback(Stream wav)
+    {
+        var bytes = new MemoryStream();
+        wav.CopyTo(bytes);
+        try
+        {
+            bytes.Position = 0;
+            sharedOutput!.Play(bytes);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            bytes.Position = 0;
+            using var player = new SoundPlayer(bytes);
+            player.PlaySync();
+        }
+    }
 
     public bool Enabled
     {

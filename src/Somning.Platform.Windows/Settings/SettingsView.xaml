@@ -20,7 +20,7 @@
    <GradientStop Color="#E61B1E23" Offset="0"/><GradientStop Color="#E8111316" Offset="0.45"/><GradientStop Color="#EC0A0B0D" Offset="1"/>
   </LinearGradientBrush>
   <LinearGradientBrush x:Key="GlassFillAcrylic" StartPoint="0,0" EndPoint="0,1">
-   <GradientStop Color="#A01D232B" Offset="0"/><GradientStop Color="#94141920" Offset="0.45"/><GradientStop Color="#B00B0E12" Offset="1"/>
+   <GradientStop Color="#85161C24" Offset="0"/><GradientStop Color="#7A0F141A" Offset="0.45"/><GradientStop Color="#900A0D11" Offset="1"/>
   </LinearGradientBrush>
   <LinearGradientBrush x:Key="RimBrush" StartPoint="0,0" EndPoint="0,1">
    <GradientStop Color="#D9EEF1F4" Offset="0"/><GradientStop Color="#59B9C0C7" Offset="0.12"/><GradientStop Color="#26FFFFFF" Offset="0.55"/><GradientStop Color="#73C9CED4" Offset="1"/>

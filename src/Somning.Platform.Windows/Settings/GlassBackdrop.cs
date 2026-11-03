@@ -115,14 +115,48 @@ internal static class GlassBackdrop
         (int)Math.Round(glassDip.Right * m.M11), (int)Math.Round(glassDip.Bottom * m.M22),
         (int)Math.Round(radiusDip * 2 * m.M11), (int)Math.Round(radiusDip * 2 * m.M22));
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct AccentPolicy
+    {
+        public int AccentState;
+        public int AccentFlags;
+        public uint GradientColor;
+        public int AnimationId;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WindowCompositionAttributeData
+    {
+        public int Attribute;
+        public nint Data;
+        public int SizeOfData;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern int SetWindowCompositionAttribute(nint hwnd, ref WindowCompositionAttributeData data);
+
+    private const int WcaAccentPolicy = 19;
+    private const int AccentDisabled = 0;
+    private const int AccentEnableBlurBehind = 3;
+
+    /// <summary>
+    /// Gaussian blur behind the window without the fixed whitish haze that DwmEnableBlurBehindWindow adds on
+    /// Windows 10. The rounded shape comes from the window region applied in <see cref="ClipToRoundedRect"/>.
+    /// </summary>
     private static bool SetBlur(nint hwnd, bool enable, nint region)
     {
-        var blur = new BlurBehind
+        var accent = new AccentPolicy { AccentState = enable ? AccentEnableBlurBehind : AccentDisabled };
+        var size = Marshal.SizeOf<AccentPolicy>();
+        var buffer = Marshal.AllocHGlobal(size);
+        try
         {
-            Flags = DwmBbEnable | (region != 0 ? DwmBbBlurRegion : 0u),
-            Enable = enable ? 1 : 0,
-            RegionBlur = region,
-        };
-        return DwmEnableBlurBehindWindow(hwnd, ref blur) == 0;
+            Marshal.StructureToPtr(accent, buffer, false);
+            var data = new WindowCompositionAttributeData { Attribute = WcaAccentPolicy, Data = buffer, SizeOfData = size };
+            return SetWindowCompositionAttribute(hwnd, ref data) != 0;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
     }
 }

@@ -1,4 +1,4 @@
-using System.Threading.Channels;
+﻿using System.Threading.Channels;
 using System.Runtime.InteropServices;
 using Somning.Core.Trigger;
 using Somning.Core.Settings;
@@ -187,6 +187,7 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
             return PInvoke.CallNextHookEx((HHOOK)default, code, wparam, lparam);
         bool down = wparam.Value is 0x100 or 0x104;
         bool up = wparam.Value is 0x101 or 0x105;
+        TrackLayoutBeforeChord(data->vkCode, down, up);
         var bindings = Volatile.Read(ref hotkeys);
         var enabled = ShouldIgnoreHotkeys?.Invoke() != true;
         var recording = IsRecordingActive?.Invoke() == true;
@@ -232,6 +233,9 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
                 targetLayoutWindow = foreground;
                 targetLayoutThreadId = foreground == 0 ? 0 : GetWindowThreadProcessId(foreground, out _);
                 layoutBeforeChord = targetLayoutThreadId == 0 ? 0 : GetKeyboardLayout(targetLayoutThreadId);
+                // Windows may already have switched the language on Ctrl+Shift, before the main key: prefer the layout
+                // seen when the first modifier went down.
+                if (preChordLayout != 0 && preChordThread == targetLayoutThreadId) layoutBeforeChord = preChordLayout;
                 if (PreserveInputLanguage) MaskLayoutSwitch();
             }
             sink.TryWrite(new KeyEvent(kind, Environment.TickCount64, data->dwExtraInfo == InputMarkers.Test));
@@ -275,6 +279,35 @@ public sealed unsafe class KeyboardHook(ChannelWriter<KeyEvent> sink) : IDisposa
     }
 
     private static readonly WindowsKeyboardInputSender MaskSender = new();
+
+    private nint preChordLayout;
+    private uint preChordThread;
+    private bool preChordArmed = true;
+
+    private static bool IsCtrl(uint vk) => vk is 0x11 or 0xA2 or 0xA3;
+    private static bool IsShift(uint vk) => vk is 0x10 or 0xA0 or 0xA1;
+
+    /// <summary>
+    /// Remembers the foreground layout when the first Ctrl/Shift of a chord goes down, which is before Windows can act on
+    /// its Ctrl+Shift language shortcut. Re-armed once both keys are released.
+    /// </summary>
+    private void TrackLayoutBeforeChord(uint vk, bool down, bool up)
+    {
+        var ctrl = IsCtrl(vk);
+        if (!ctrl && !IsShift(vk)) return;
+        var otherDown = ctrl ? KeyDown(0x10) : KeyDown(0x11);
+        if (down && preChordArmed && !otherDown && PreserveInputLanguage)
+        {
+            preChordArmed = false;
+            var foreground = GetForegroundWindow();
+            preChordThread = foreground == 0 ? 0 : GetWindowThreadProcessId(foreground, out _);
+            preChordLayout = preChordThread == 0 ? 0 : GetKeyboardLayout(preChordThread);
+        }
+        else if (up && !otherDown)
+        {
+            preChordArmed = true;
+        }
+    }
 
     private void QueueLayoutVerification()
     {

@@ -57,6 +57,10 @@ Name: "{userprograms}\Somning"; Filename: "{app}\Somning.App.exe"; WorkingDir: "
 Name: "{userprograms}\Somning - Baixar modelos"; Filename: "{app}\Baixar-modelos.cmd"; WorkingDir: "{app}"; Check: not WizardSilent
 Name: "{userdesktop}\Somning"; Filename: "{app}\Somning.App.exe"; Tasks: desktopicon; Check: not WizardSilent
 
+[Registry]
+; The app writes this value itself when "Iniciar com o Windows" is on; remove it on uninstall.
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueName: "Somning"; ValueType: none; Flags: dontcreatekey uninsdeletevalue
+
 [Run]
 Filename: "{app}\Somning.App.exe"; Description: "Abrir Somning"; Flags: nowait postinstall skipifsilent
 ; Silent update started by the app itself (/RELAUNCH=1): open Somning again when it finishes.

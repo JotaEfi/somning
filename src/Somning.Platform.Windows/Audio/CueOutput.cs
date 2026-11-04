@@ -25,19 +25,24 @@ internal sealed class CueOutput : IDisposable
         var bytes = copy.ToArray();
         if (bytes.Length <= HeaderSize) return;
         var cue = ToStereo(bytes);
+        WasapiPlayer? failed;
+        Exception error;
         lock (gate)
         {
             try
             {
                 EnsureOpen();
                 mixer!.AddMixerInput(new ArraySampleProvider(cue, mixer.WaveFormat));
+                return;
             }
             catch (Exception ex) when (ex is System.Runtime.InteropServices.COMException or InvalidOperationException or ArgumentException)
             {
-                CloseLocked(); // Device vanished or changed: reopen on the next cue.
-                throw new InvalidOperationException("Cue output unavailable.", ex);
+                failed = DetachLocked(); // Device vanished or changed: reopen on the next cue.
+                error = ex;
             }
         }
+        DisposeDevice(failed);
+        throw new InvalidOperationException("Cue output unavailable.", error);
     }
 
     private void EnsureOpen()
@@ -45,17 +50,37 @@ internal sealed class CueOutput : IDisposable
         if (output is not null) return;
         mixer = new MixingSampleProvider(WaveFormat.CreateIeeeFloatWaveFormat(CueWave.SampleRate, 2)) { ReadFully = true };
         var device = new WasapiPlayerBuilder().WithSharedMode().WithLatency(LatencyMs).Build();
-        device.PlaybackStopped += (_, _) => { lock (gate) { if (ReferenceEquals(output, device)) CloseLocked(); } };
+        device.PlaybackStopped += (_, _) => OnPlaybackStopped(device);
         device.Init(new SampleToWaveProvider(mixer));
         device.Play();
         output = device;
     }
 
-    private void CloseLocked()
+    /// <summary>
+    /// Raised on the device's own playback thread. Disposing the device joins that thread, so it must never happen
+    /// here (a self-join never returns) and never while <see cref="gate"/> is held by a thread waiting on this one.
+    /// </summary>
+    private void OnPlaybackStopped(WasapiPlayer device)
+    {
+        lock (gate)
+        {
+            if (!ReferenceEquals(output, device)) return; // Already detached by Dispose or a failed Play.
+            DetachLocked();
+        }
+        ThreadPool.QueueUserWorkItem(_ => DisposeDevice(device));
+    }
+
+    /// <summary>Clears the open stream under the lock; the caller disposes the returned device outside it.</summary>
+    private WasapiPlayer? DetachLocked()
     {
         var device = output;
         output = null;
         mixer = null;
+        return device;
+    }
+
+    private static void DisposeDevice(WasapiPlayer? device)
+    {
         try { device?.Dispose(); } catch (Exception ex) when (ex is System.Runtime.InteropServices.COMException or InvalidOperationException) { }
     }
 
@@ -74,7 +99,10 @@ internal sealed class CueOutput : IDisposable
 
     public void Dispose()
     {
-        lock (gate) CloseLocked();
+        WasapiPlayer? device;
+        lock (gate) device = DetachLocked();
+        // Outside the lock: disposing joins the playback thread, whose PlaybackStopped handler takes the lock.
+        DisposeDevice(device);
     }
 
     private sealed class ArraySampleProvider(float[] samples, WaveFormat format) : ISampleProvider

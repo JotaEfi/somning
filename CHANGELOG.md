@@ -1,5 +1,11 @@
 ﻿# Histórico de versões
 
+## 1.0.6 — instalador, menu da bandeja e cancelamento na nuvem (2026-11-04)
+
+- **Instalador:** os modelos de voz são conferidos pelo SHA-256 depois de salvos; se não puderem ser salvos ou verificados, o instalador avisa e explica como baixar depois. Corrigido o comando do PowerShell exibido nessa mensagem, que saía quebrado.
+- **Menu da bandeja:** o menu é criado uma única vez e reaproveitado, em vez de abrir uma thread nova a cada clique; fechar o Somning encerra o menu com segurança.
+- **Nuvem:** cancelar uma transcrição na nuvem não é mais tratado como "tempo esgotado", então o ditado para na hora.
+
 ## 1.0.5 — atualização automática e correções (2026-11-02)
 
 - **Atualização automática:** o Somning confere uma vez por dia (e pelo menu da bandeja, **Verificar atualizações**) se há uma versão nova no GitHub. Se houver, pergunta; ao aceitar, baixa o instalador, confere o SHA-256 publicado pelo GitHub, atualiza em silêncio e abre o Somning de novo. Nunca instala sem confirmação e nunca avisa durante um ditado. Pode ser desligada em Configurações → **Avisar sobre atualizações**. Para ser oferecida, a release precisa ser estável (não pré-lançamento) e trazer `Somning-X.Y.Z-Setup.exe` (e `-arm64-`).

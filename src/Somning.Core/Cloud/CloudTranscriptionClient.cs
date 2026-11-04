@@ -76,6 +76,12 @@ public sealed class CloudTranscriptionClient : ICloudTranscriptionClient
         {
             throw;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // A caller cancellation is control flow, not a provider timeout. Preserve it so the
+            // dictation pipeline can stop promptly during cancellation or shutdown.
+            throw;
+        }
         catch (OperationCanceledException exception)
         {
             throw new CloudTranscriptionException(

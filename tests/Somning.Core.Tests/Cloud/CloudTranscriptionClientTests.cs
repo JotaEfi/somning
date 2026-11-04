@@ -204,7 +204,7 @@ public sealed class CloudTranscriptionClientTests
     }
 
     [Fact]
-    public async Task A_cancelled_token_is_reported_as_timeout()
+    public async Task A_cancelled_token_propagates_cancellation()
     {
         using var wav = new WavFile();
         var handler = new CapturingHandler(_ => Ok("""{"text":"never"}"""));
@@ -212,13 +212,11 @@ public sealed class CloudTranscriptionClientTests
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
 
-        var exception = await Assert.ThrowsAsync<CloudTranscriptionException>(
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => client.TranscribeAsync(
                 wav.Path,
                 new CloudEngineConfig(CloudProvider.Groq, ApiKey),
                 cancellation.Token));
-
-        Assert.Equal(CloudErrorCodes.Timeout, exception.ErrorCode);
     }
 
     [Fact]

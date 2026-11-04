@@ -158,28 +158,59 @@ begin
 end;
 
 { Moves downloaded files from the temp folder into the models folder. }
-procedure MoveModel(Name: String);
+function MoveModel(Name, Hash: String): Boolean;
+var
+  SourceFile, TargetFile: String;
 begin
-  if FileExists(ExpandConstant('{tmp}\' + Name)) then
+  Result := False;
+  if ModelPresent(Name, Hash) then
   begin
-    ForceDirectories(ModelsDir());
-    DeleteFile(ModelsDir() + '\' + Name);
-    if not RenameFile(ExpandConstant('{tmp}\' + Name), ModelsDir() + '\' + Name) then
-      CopyFile(ExpandConstant('{tmp}\' + Name), ModelsDir() + '\' + Name, False);
+    Result := True;
+    Exit;
+  end;
+  SourceFile := ExpandConstant('{tmp}\' + Name);
+  TargetFile := ModelsDir() + '\' + Name;
+  if not FileExists(SourceFile) then Exit;
+  ForceDirectories(ModelsDir());
+  if FileExists(TargetFile) and not DeleteFile(TargetFile) then
+  begin
+    Log('Could not replace model file: ' + TargetFile);
+    Exit;
+  end;
+  if not RenameFile(SourceFile, TargetFile) then
+  begin
+    if not CopyFile(SourceFile, TargetFile, False) then
+    begin
+      Log('Could not move or copy model file: ' + Name);
+      Exit;
+    end;
+  end;
+  if not FileExists(TargetFile) then
+  begin
+    Log('Model file is missing after saving: ' + Name);
+    Exit;
+  end;
+  Result := GetSHA256OfFile(TargetFile) = Hash;
+  if not Result then
+  begin
+    Log('Model verification failed after saving: ' + Name);
+    DeleteFile(TargetFile);
   end;
 end;
 
-procedure InstallDownloadedModels();
+function InstallDownloadedModels(): Boolean;
 begin
-  MoveModel(Q5Name);
-  MoveModel(Q8Name);
-  MoveModel(VadName);
+  Result := MoveModel(Q5Name, Q5Hash);
+  if not Result then Exit;
+  Result := MoveModel(Q8Name, Q8Hash);
+  if not Result then Exit;
+  Result := MoveModel(VadName, VadHash);
 end;
 
 const
   ManualTip = 'Para baixar depois, abra o Menu Iniciar e clique em "Somning - Baixar modelos". ' +
     'Se preferir o PowerShell, cole este comando:' + #13#10#13#10 +
-    'powershell -ExecutionPolicy Bypass -File "%LOCALAPPDATA%\Somningppetch-models.ps1"';
+    'powershell -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Somning\app\fetch-models.ps1" -Only ggml-large-v3-turbo-q5_0.bin,ggml-large-v3-turbo-q8_0.bin,ggml-silero-v6.2.0.bin';
 
 { Models are fetched after the program files are in place. A failed download offers a retry; if the person gives
   up, the program stays installed and the tip above explains how to fetch the models later. }
@@ -191,7 +222,10 @@ begin
     if WizardSilent then
     begin
       { Silent installs get one attempt and no prompts: a prompt could hang or answer itself on retry. }
-      if DownloadModels() then InstallDownloadedModels()
+      if DownloadModels() then
+      begin
+        if not InstallDownloadedModels() then Log('Downloaded models could not be saved and verified. ' + ManualTip);
+      end
       else Log('Model download failed during silent install. ' + ManualTip);
     end
     else
@@ -205,7 +239,9 @@ begin
           Exit;
         end;
       end;
-      InstallDownloadedModels();
+      if not InstallDownloadedModels() then
+        MsgBox('Os modelos foram baixados, mas não puderam ser salvos ou verificados.' + #13#10#13#10 + ManualTip,
+          mbError, MB_OK);
     end;
   end;
 end;

@@ -1,5 +1,9 @@
 ﻿# Histórico de versões
 
+## 1.0.7 — fechamento sem travar (2026-11-04)
+
+- **Sons:** corrigido um travamento ao fechar ou atualizar o Somning. A saída de áudio dos sons era encerrada enquanto a reprodução esperava pelo mesmo bloqueio, e o aplicativo podia ficar preso para sempre. Também deixa de travar quando o dispositivo de áudio some (por exemplo, ao desconectar o fone).
+
 ## 1.0.6 — instalador, menu da bandeja e cancelamento na nuvem (2026-11-04)
 
 - **Instalador:** os modelos de voz são conferidos pelo SHA-256 depois de salvos; se não puderem ser salvos ou verificados, o instalador avisa e explica como baixar depois. Corrigido o comando do PowerShell exibido nessa mensagem, que saía quebrado.

@@ -5,7 +5,7 @@
 ![Somning — Sua voz. Seu texto. Ditado em português, direto no Windows.](docs/images/hero.svg)
 
 <p align="center">
-  <strong>Windows 10 e 11 · x64 e ARM64 · Português do Brasil · Whisper local · Protótipo 1.0.6</strong>
+  <strong>Windows 10 e 11 · x64 e ARM64 · Português do Brasil · Whisper local · Protótipo 1.0.7</strong>
 </p>
 
 <p align="center">
@@ -29,7 +29,7 @@ O **Somning** transforma sua fala em texto no campo em que você está trabalhan
 
 O processamento local usa **Whisper**, em um processo separado. O instalador baixa os modelos (cerca de 1,45 GB); depois disso, você pode ditar offline. **Groq** e **OpenAI** são opções de nuvem ativadas por você, com sua própria chave.
 
-> **Versão 1.0.6 do protótipo.** O fluxo de ditado está implementado; aparência nativa, compatibilidade entre aplicativos e fluidez em monitores de alta frequência continuam em validação. As compilações para **Windows 11** e **ARM64** existem, mas ainda não foram validadas em hardware real. Veja as [limitações conhecidas](docs/RELEASE-1.0.md).
+> **Versão 1.0.7 do protótipo.** O fluxo de ditado está implementado; aparência nativa, compatibilidade entre aplicativos e fluidez em monitores de alta frequência continuam em validação. As compilações para **Windows 11** e **ARM64** existem, mas ainda não foram validadas em hardware real. Veja as [limitações conhecidas](docs/RELEASE-1.0.md).
 
 ## Como funciona
 
@@ -90,8 +90,8 @@ Baixe o instalador da sua arquitetura na [release mais recente](https://github.c
 
 | Seu computador | Arquivo |
 | :--- | :--- |
-| PC com processador Intel ou AMD (x64) | **Somning-1.0.6-Setup.exe** |
-| PC com processador ARM (Snapdragon e similares) | **Somning-1.0.6-arm64-Setup.exe** |
+| PC com processador Intel ou AMD (x64) | **Somning-1.0.7-Setup.exe** |
+| PC com processador ARM (Snapdragon e similares) | **Somning-1.0.7-arm64-Setup.exe** |
 
 A instalação é por usuário e inclui desinstalador. O instalador baixa os modelos durante a instalação; se o download não terminar, o atalho **Somning - Baixar modelos** no Menu Iniciar completa depois. O código-fonte também está disponível em um ZIP separado na mesma release.
 
@@ -100,7 +100,7 @@ A instalação é por usuário e inclui desinstalador. O instalador baixa os mod
 **Instalação silenciosa:** o instalador fecha o Somning e o motor sozinho se estiverem abertos.
 
 ```powershell
-.\Somning-1.0.6-Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SEMMODELOS=1
+.\Somning-1.0.7-Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SEMMODELOS=1
 ```
 
 Use `/SEMMODELOS=1` para pular o download dos modelos e `/DIR="C:\Pasta"` para escolher a pasta. Sem `/DIR`, uma atualização reaproveita a pasta da instalação anterior.
@@ -161,8 +161,8 @@ powershell -NoProfile -File tools/package.ps1 -Arch arm64    # ARM64 -> publish/
 Para gerar o Setup.exe, instale o [Inno Setup 6](https://jrsoftware.org/isinfo.php) e execute, após o empacotamento correspondente:
 
 ```powershell
-powershell -NoProfile -File tools/setup.ps1                  # Somning-1.0.6-Setup.exe
-powershell -NoProfile -File tools/setup.ps1 -Arch arm64      # Somning-1.0.6-arm64-Setup.exe
+powershell -NoProfile -File tools/setup.ps1                  # Somning-1.0.7-Setup.exe
+powershell -NoProfile -File tools/setup.ps1 -Arch arm64      # Somning-1.0.7-arm64-Setup.exe
 ```
 
 A saída fica em `publish/`, com checksum `.sha256` ao lado. Modelos não são incluídos. Não distribua builds Debug nem pacotes com `-WithHarness`.

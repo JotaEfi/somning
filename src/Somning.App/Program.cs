@@ -87,6 +87,7 @@ static async Task<int> RunDictationAsync(Func<IAudioSource> audioSourceFactory, 
         {
             app.EnableOverlay();
             app.EnableTray(() => { try { shutdown.Cancel(); } catch (ObjectDisposedException) { } });
+            app.EnsureAutostartMatchesSettings(); // normal runs only: harness runs use throwaway settings
         }
         app.StartLoop();
         app.Hook.Start(); // KeyboardHook installed BEFORE the engine StartAsync (below) is even called

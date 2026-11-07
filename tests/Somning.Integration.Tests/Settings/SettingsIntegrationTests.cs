@@ -73,7 +73,8 @@ public sealed class SettingsIntegrationTests
         await using var app = new AppComposition(
             () => dynamicAudio.CreateAudioSource(),
             settingsStore: store,
-            dynamicAudio: dynamicAudio);
+            dynamicAudio: dynamicAudio,
+            autostartManager: new FakeAutostartManager());
 
         Assert.Equal("initial-mic-id", app.DynamicAudioFactory?.CurrentDeviceId);
 
@@ -97,7 +98,8 @@ public sealed class SettingsIntegrationTests
 
         await using var app = new AppComposition(
             () => new WasapiAudioSource(),
-            settingsStore: store);
+            settingsStore: store,
+            autostartManager: new FakeAutostartManager());
 
         Assert.True(app.AutoPasteEnabled);
 
@@ -119,7 +121,8 @@ public sealed class SettingsIntegrationTests
 
         await using var app = new AppComposition(
             () => new WasapiAudioSource(),
-            settingsStore: store);
+            settingsStore: store,
+            autostartManager: new FakeAutostartManager());
 
         Assert.False(app.SoundPlayer.Enabled);
 
@@ -186,6 +189,33 @@ public sealed class SettingsIntegrationTests
 
         Assert.True(store.Current.StartWithWindows);
         Assert.True(autostart.Enabled);
+    }
+
+    [Fact]
+    public async Task EnsureAutostart_WhenEnabledButRegistryEntryMissing_RewritesIt()
+    {
+        var store = new MemorySettingsStore { Current = new UserSettings { StartWithWindows = true } };
+        var autostart = new FakeAutostartManager();
+
+        await using var app = new AppComposition(() => new WasapiAudioSource(), settingsStore: store, autostartManager: autostart);
+        app.EnsureAutostartMatchesSettings();
+
+        Assert.True(autostart.Enabled);
+        Assert.Equal(1, autostart.SetEnabledCalls);
+    }
+
+    [Fact]
+    public async Task EnsureAutostart_WhenDisabled_NeverTouchesTheRegistry()
+    {
+        var store = new MemorySettingsStore { Current = new UserSettings { StartWithWindows = false } };
+        var autostart = new FakeAutostartManager();
+        autostart.SetEnabled(true);
+
+        await using var app = new AppComposition(() => new WasapiAudioSource(), settingsStore: store, autostartManager: autostart);
+        app.EnsureAutostartMatchesSettings();
+
+        Assert.True(autostart.Enabled);
+        Assert.Equal(1, autostart.SetEnabledCalls);
     }
 
     [Fact]

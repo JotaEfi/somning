@@ -180,6 +180,25 @@ public sealed class AppComposition : IAsyncDisposable
             updated.MicrophoneDeviceId, updated.AutoPaste, updated.PlaySoundCues, updated.StartWithWindows, updated.CloudProvider);
     }
 
+    /// <summary>
+    /// DIST-02: on a normal start, re-creates the HKCU\...\Run entry when "Iniciar com o Windows" is on, pointing at
+    /// the running executable. Settings are only written to the registry when changed, so an entry removed by anything
+    /// else (an uninstall of an older copy, a cleanup tool) stayed missing while the toggle still showed on. It never
+    /// deletes the entry and never touches StartupApproved, so disabling Somning in Task Manager stays respected.
+    /// </summary>
+    public void EnsureAutostartMatchesSettings()
+    {
+        if (!Settings.StartWithWindows) return;
+        try
+        {
+            AutostartManager.SetEnabled(true);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException or InvalidOperationException or ArgumentException)
+        {
+            Log.Warning(ex, "Could not restore the start-with-Windows entry");
+        }
+    }
+
     public void EnableTray(Action requestShutdown)
     {
         shutdownCallback = requestShutdown;

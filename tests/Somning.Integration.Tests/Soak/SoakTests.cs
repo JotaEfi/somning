@@ -12,6 +12,7 @@ namespace Somning.Integration.Tests.Soak;
 /// Category=Soak only: default Desktop/E2E filters never run it. Failed iterations are counted, never repeated.
 /// </summary>
 [Trait("Category", "Soak")]
+[Trait("Category", "Desktop")] // Uses the real desktop (focus, keyboard, clipboard or a live app): see tools/testes.ps1
 public sealed class SoakTests
 {
     private const string FixtureName = "tracer/hoje";

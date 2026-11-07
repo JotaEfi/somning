@@ -5,6 +5,7 @@ using Xunit;
 
 namespace Somning.Integration.Tests.Output;
 
+[Trait("Category", "Desktop")] // Uses the real desktop (focus, keyboard, clipboard or a live app): see tools/testes.ps1
 public sealed class RepasteLastTranscriptTests
 {
     [Fact]

@@ -10,6 +10,7 @@ namespace Somning.Integration.Tests.Harness;
 /// and the harness-only delivery barrier.
 /// </summary>
 [Trait("Category", "E2E")]
+[Trait("Category", "Desktop")] // Uses the real desktop (focus, keyboard, clipboard or a live app): see tools/testes.ps1
 public sealed class HarnessPipeTests
 {
     private static string Silence => Path.Combine(RepoPaths.Fixtures, "nonspeech", "silence.wav");

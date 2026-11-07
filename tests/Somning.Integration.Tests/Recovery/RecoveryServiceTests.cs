@@ -15,6 +15,7 @@ namespace Somning.Integration.Tests.Recovery;
 /// touches live captures made while admission is pending.
 /// </summary>
 [Trait("Category", "E2E")]
+[Trait("Category", "Desktop")] // Uses the real desktop (focus, keyboard, clipboard or a live app): see tools/testes.ps1
 public sealed class RecoveryServiceTests
 {
     private const string SavedText = "Texto salvo.";

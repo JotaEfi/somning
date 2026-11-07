@@ -8,6 +8,7 @@ using Xunit;
 
 namespace Somning.Integration.Tests.Hook;
 
+[Trait("Category", "Desktop")] // Uses the real desktop (focus, keyboard, clipboard or a live app): see tools/testes.ps1
 public sealed class HookWatchdogLivenessTests
 {
     private static readonly TimeSpan SettleTimeout = TimeSpan.FromSeconds(3);

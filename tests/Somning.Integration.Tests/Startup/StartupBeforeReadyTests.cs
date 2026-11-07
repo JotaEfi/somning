@@ -10,6 +10,7 @@ namespace Somning.Integration.Tests.Startup;
 /// suppressed (no space reaches Notepad), recorded, and transcribed and pasted after the engine becomes ready.
 /// </summary>
 [Trait("Category", "E2E")]
+[Trait("Category", "Desktop")] // Uses the real desktop (focus, keyboard, clipboard or a live app): see tools/testes.ps1
 public sealed class StartupBeforeReadyTests
 {
     [Fact]

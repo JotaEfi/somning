@@ -6,6 +6,7 @@ using Somning.App.Engine;
 using Somning.Core.Engine;
 using Somning.Engine.Protocol;
 namespace Somning.Integration.Tests.Skeleton;
+[Trait("Category", "Desktop")] // Uses the real desktop (focus, keyboard, clipboard or a live app): see tools/testes.ps1
 public sealed class SkeletonRoundTripTests
 {
     [Fact]

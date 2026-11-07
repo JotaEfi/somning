@@ -7,6 +7,7 @@ using Xunit;
 namespace Somning.Integration.Tests.E2E;
 
 [Trait("Category", "E2E")]
+[Trait("Category", "Desktop")] // Uses the real desktop (focus, keyboard, clipboard or a live app): see tools/testes.ps1
 public sealed class PasteDeferredE2ETests
 {
     private const string FixtureName = "tracer/hoje.wav";

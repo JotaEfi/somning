@@ -30,7 +30,11 @@ Para gerar os instaladores, veja a seção [Desenvolvimento](README.md#desenvolv
 
 - **Todo código novo precisa de teste.** Comece pelo teste, veja-o falhar e então implemente.
 - Os testes do **Core** (`Somning.Core.Tests`) não dependem do Windows e são a primeira linha de defesa.
-- Os testes de **integração** renderizam a gota e as Configurações. Alguns usam foco, teclado e desktop real: rode esses casos numa sessão dedicada, sem usar o computador ao mesmo tempo.
+- Os testes de **integração** renderizam a gota e as Configurações. Os marcados com `[Trait("Category", "Desktop")]` usam a área de trabalho de verdade (foco de janela, teclado, área de transferência, app aberto) e falham se você mexer no PC enquanto rodam. Para rodar tudo, use `powershell -NoProfile -File tools/testes.ps1`, que pergunta onde rodar esses testes:
+  1. **pular** e rodar só o resto localmente (pode usar o PC);
+  2. **no GitHub Actions** (workflow *Testes de área de trabalho*), em paralelo com o resto local (pode usar o PC; exige o commit enviado ao GitHub);
+  3. **localmente**, junto com o resto (não use o PC até terminar).
+- Um teste novo que use foco, teclado, área de transferência ou abra o app precisa da marca `Desktop`.
 - Não enfraqueça nem apague um teste para fazer uma mudança passar. Se um teste está errado, explique o motivo na descrição do pull request.
 
 ## Estilo de código

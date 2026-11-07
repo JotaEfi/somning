@@ -7,7 +7,12 @@ internal static class FaultInjection
     {
         switch (Environment.GetEnvironmentVariable("SOMNING_ENGINE_FAULT"))
         {
-            case "crash_on_transcribe": Environment.FailFast("Injected worker crash."); break;
+            // Kill, not FailFast: FailFast goes through Windows Error Reporting, which pops an "Unknown Hard Error"
+            // dialog on the desktop during test runs. An abrupt kill is the same crash for the supervisor.
+            case "crash_on_transcribe":
+                Console.Error.WriteLine("somning-test:injected-crash");
+                System.Diagnostics.Process.GetCurrentProcess().Kill();
+                break;
             case "gpu_error_on_transcribe" when backend == "vulkan": return ErrorCodes.GpuError;
             case "slow_transcribe":
                 Console.Error.WriteLine("somning-test:inference-started");

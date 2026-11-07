@@ -194,12 +194,40 @@ public sealed class EngineSupervisorTests : IDisposable
         var deadline = System.Diagnostics.Stopwatch.StartNew();
         while (deadline.Elapsed < TimeSpan.FromSeconds(2))
         {
-            var processes = System.Diagnostics.Process.GetProcessesByName("Somning.Engine");
-            if (processes.Length == 0) return;
-            foreach (var process in processes) process.Dispose();
+            if (TestOwnedEngineProcesses().Count == 0) return;
             await Task.Delay(TimeSpan.FromMilliseconds(50), TestContext.Current.CancellationToken);
         }
-        Assert.Empty(System.Diagnostics.Process.GetProcessesByName("Somning.Engine"));
+        Assert.Empty(TestOwnedEngineProcesses());
+    }
+
+    /// <summary>
+    /// Engine workers started from this checkout. An installed Somning running on the same machine has its own
+    /// Somning.Engine (under %LOCALAPPDATA%\Somning\app) and must not count as a worker leaked by the test.
+    /// </summary>
+    private static List<string> TestOwnedEngineProcesses()
+    {
+        var root = RepositoryRoot();
+        var owned = new List<string>();
+        foreach (var process in System.Diagnostics.Process.GetProcessesByName("Somning.Engine"))
+        {
+            using (process)
+            {
+                string? path;
+                try { path = process.MainModule?.FileName; }
+                catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException) { continue; }
+                if (path is not null && path.StartsWith(root, StringComparison.OrdinalIgnoreCase)) owned.Add($"{process.Id} {path}");
+            }
+        }
+        return owned;
+    }
+
+    private static string RepositoryRoot()
+    {
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "Somning.sln"))) return dir.FullName + Path.DirectorySeparatorChar;
+        }
+        throw new InvalidOperationException("Somning.sln not found above the test output directory.");
     }
 
     public void Dispose()

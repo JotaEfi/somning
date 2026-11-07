@@ -11,6 +11,7 @@ namespace Somning.Integration.Tests.Dictation;
 /// FileAudioSource → spool → engine → clipboard → Ctrl+V into Notepad.
 /// </summary>
 [Trait("Category", "E2E")]
+[Trait("Category", "Desktop")] // Uses the real desktop (focus, keyboard, clipboard or a live app): see tools/testes.ps1
 public sealed partial class HarnessDictationTests
 {
     [GeneratedRegex(@"\[INF\] dictation \d{8}-\d{6}-\d{3}")]

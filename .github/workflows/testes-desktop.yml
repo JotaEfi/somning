@@ -1,0 +1,65 @@
+name: Testes de área de trabalho
+
+# Roda os testes marcados com Category=Desktop (foco de janela, teclado, área de transferência, app de verdade)
+# numa máquina Windows do GitHub, para não disputar a área de trabalho de quem está usando o PC.
+# Disparado sob demanda por tools/testes.ps1 (opção 2) ou pela aba Actions.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: testes-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    name: Testes de área de trabalho (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 120
+    env:
+      SOMNING_MODELS_DIR: ${{ github.workspace }}\.models
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Instalar o SDK do .NET indicado em global.json
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      # Os modelos (~1,4 GB) ficam em cache entre execuções; a chave muda se a lista de modelos mudar.
+      - name: Cache dos modelos de voz
+        uses: actions/cache@v4
+        with:
+          path: .models
+          key: modelos-${{ hashFiles('tools/fetch-models.ps1') }}
+
+      - name: Baixar os modelos que os testes usam
+        shell: pwsh
+        run: |
+          & .\tools\fetch-models.ps1 -ModelsDir $env:SOMNING_MODELS_DIR -Only ggml-large-v3-turbo-q5_0.bin,ggml-large-v3-turbo-q8_0.bin,ggml-silero-v6.2.0.bin
+          if ($LASTEXITCODE -ne 0) { throw "Download dos modelos falhou (código $LASTEXITCODE)." }
+
+      # Debug: os testes abrem o app e o motor compilados com o harness de teste.
+      - name: Compilar (Release e Debug)
+        run: |
+          dotnet build Somning.sln -c Release --nologo
+          dotnet build Somning.sln -c Debug --nologo
+
+      - name: Testes de área de trabalho
+        shell: pwsh
+        run: |
+          & .\tests\Somning.Integration.Tests\bin\Release\net10.0-windows\Somning.Integration.Tests.exe -noColor -longRunning 120 -trait "Category=Desktop" -xml testes-desktop.xml
+          if ($LASTEXITCODE -ne 0) { throw "Testes de área de trabalho falharam (código $LASTEXITCODE)." }
+
+      - name: Guardar o resultado e os logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testes-desktop
+          path: |
+            testes-desktop.xml
+            ${{ runner.temp }}\somning-*\**\*.log
+          if-no-files-found: ignore

@@ -1,5 +1,11 @@
 ﻿# Histórico de versões
 
+## 1.0.8 — Iniciar com o Windows (2026-11-07)
+
+- **Iniciar com o Windows:** a opção voltou a funcionar. O Somning só gravava a entrada de inicialização ao mudar a opção; se algo a apagasse, a opção seguia marcada mas o Somning não abria com o Windows nem aparecia no Gerenciador de Tarefas. Agora, ao abrir, ele recria a entrada sempre que a opção está ligada. Desativar o Somning pela aba **Inicializar** do Gerenciador de Tarefas continua sendo respeitado.
+- **Gerenciador de Tarefas:** o Somning aparece como **Somning** (antes "Somning.App"), também na coluna Fornecedor.
+- **Testes:** os testes que usam a área de trabalho de verdade ficaram separados e podem rodar no GitHub Actions, sem disputar o PC com quem está usando (`tools/testes.ps1`).
+
 ## 1.0.7 — fechamento sem travar (2026-11-04)
 
 - **Sons:** corrigido um travamento ao fechar ou atualizar o Somning. A saída de áudio dos sons era encerrada enquanto a reprodução esperava pelo mesmo bloqueio, e o aplicativo podia ficar preso para sempre. Também deixa de travar quando o dispositivo de áudio some (por exemplo, ao desconectar o fone).

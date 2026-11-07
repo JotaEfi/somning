@@ -1,4 +1,4 @@
-﻿# Instalação do Somning 1.0.7
+﻿# Instalação do Somning 1.0.8
 
 ## Requisitos
 
@@ -6,19 +6,19 @@ Windows 10 ou 11 (x64 ou ARM64), microfone funcional e espaço para o programa e
 
 ## Instalador Setup.exe
 
-Baixe `Somning-1.0.7-Setup.exe` na [release mais recente](https://github.com/JotaEfi/somning/releases/latest). O assistente instala por usuário em `%LOCALAPPDATA%\Somning\app`, cria atalhos e registra o desinstalador. Durante a instalação, o assistente baixa e verifica os modelos de voz (cerca de 1,45 GB), em uma janela com a barra de progresso. Se a conexão cair, a janela oferece nova tentativa e o download continua de onde parou. Se o download não terminar, o Somning fica instalado e o atalho **Somning - Baixar modelos** no Menu Iniciar completa depois. Os modelos e dados pessoais ficam fora da pasta do programa e são preservados na desinstalação. O instalador não tem assinatura digital.
+Baixe `Somning-1.0.8-Setup.exe` na [release mais recente](https://github.com/JotaEfi/somning/releases/latest). O assistente instala por usuário em `%LOCALAPPDATA%\Somning\app`, cria atalhos e registra o desinstalador. Durante a instalação, o assistente baixa e verifica os modelos de voz (cerca de 1,45 GB), em uma janela com a barra de progresso. Se a conexão cair, a janela oferece nova tentativa e o download continua de onde parou. Se o download não terminar, o Somning fica instalado e o atalho **Somning - Baixar modelos** no Menu Iniciar completa depois. Os modelos e dados pessoais ficam fora da pasta do programa e são preservados na desinstalação. O instalador não tem assinatura digital.
 
 ### Qual instalador baixar
 
-- **PC com processador Intel ou AMD (x64):** `Somning-1.0.7-Setup.exe`.
-- **PC com processador ARM (Snapdragon e similares):** `Somning-1.0.7-arm64-Setup.exe`.
+- **PC com processador Intel ou AMD (x64):** `Somning-1.0.8-Setup.exe`.
+- **PC com processador ARM (Snapdragon e similares):** `Somning-1.0.8-arm64-Setup.exe`.
 
 Em **ARM64** o processamento local usa só a CPU, porque o Whisper não tem aceleração por GPU (Vulkan) para essa arquitetura. O ditado funciona, mas é mais lento que em um PC x64 com placa de vídeo compatível. Os instaladores ARM64 e a execução no Windows 11 ainda não foram validados em hardware real.
 
 ### Instalação silenciosa
 
 ```powershell
-.\Somning-1.0.7-Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SEMMODELOS=1
+.\Somning-1.0.8-Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SEMMODELOS=1
 ```
 
 O instalador fecha o Somning e o motor sozinho se estiverem abertos. Use `/SEMMODELOS=1` para pular o download dos modelos e `/DIR="C:\Pasta"` para escolher a pasta; sem `/DIR`, uma atualização reaproveita a pasta da instalação anterior. Para gravar um log, acrescente `/LOG="C:\caminho\setup.log"`.

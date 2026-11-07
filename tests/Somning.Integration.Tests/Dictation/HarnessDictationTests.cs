@@ -39,7 +39,8 @@ public sealed partial class HarnessDictationTests
         HotkeyInjector.Chord(80); // tap → stop
 
         var text = "";
-        var until = DateTime.UtcNow + TimeSpan.FromSeconds(20);
+        // Generous ceiling for CPU-only CI runners (no GPU); the loop exits as soon as the paste lands.
+        var until = DateTime.UtcNow + TimeSpan.FromSeconds(60);
         while (DateTime.UtcNow < until)
         {
             text = notepad.GetText();

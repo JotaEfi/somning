@@ -33,6 +33,11 @@ public sealed class SkeletonRoundTripTests
         var data = Path.Combine(Path.GetTempPath(), "somning-app-test", Guid.NewGuid().ToString("N"));
         var info = new ProcessStartInfo(RepoPaths.AppExe) { UseShellExecute = false, CreateNoWindow = true };
         info.ArgumentList.Add("--transcribe-file"); info.ArgumentList.Add(Path.Combine(RepoPaths.Fixtures, "tracer", "hoje.wav"));
+        // --transcribe-file picks its backend from --backend, not from the dictation startup path: honour the CI override.
+        if (Environment.GetEnvironmentVariable("SOMNING_ENGINE_BACKEND") is "cpu" or "vulkan")
+        {
+            info.ArgumentList.Add("--backend"); info.ArgumentList.Add(Environment.GetEnvironmentVariable("SOMNING_ENGINE_BACKEND")!);
+        }
         info.Environment["SOMNING_DATA_DIR"] = data;
         using var process = Process.Start(info) ?? throw new IOException("App did not start.");
         try

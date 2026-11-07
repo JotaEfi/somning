@@ -32,6 +32,7 @@ public sealed class DictationE2ETests
     }
 
     [Fact]
+    [Trait("Category", "Performance")] // Latency/memory budget for the owner's hardware; skipped on CI (no GPU)
     public async Task Repeated_dictations_measure_warm_stop_to_paste_budget()
     {
         var fixture = E2EFixtureSupport.Fixture("speech/longo-numeros.wav");

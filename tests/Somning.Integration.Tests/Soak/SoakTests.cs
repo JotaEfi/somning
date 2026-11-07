@@ -23,6 +23,7 @@ public sealed class SoakTests
     private static readonly TimeSpan OutcomeTimeout = TimeSpan.FromMinutes(2);
 
     [Fact]
+    [Trait("Category", "Performance")] // Latency/memory budget for the owner's hardware; skipped on CI (no GPU)
     public async Task Fifty_dictations_then_real_hotkey_dictation_stay_healthy()
     {
         Requires.Models();

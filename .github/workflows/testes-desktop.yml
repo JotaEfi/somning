@@ -2,6 +2,8 @@ name: Testes de área de trabalho
 
 # Roda os testes marcados com Category=Desktop (foco de janela, teclado, área de transferência, app de verdade)
 # numa máquina Windows do GitHub, para não disputar a área de trabalho de quem está usando o PC.
+# Os marcados com Category=Performance (metas de latência e memória do hardware do dono) ficam de fora:
+# a máquina do GitHub não tem GPU. Eles rodam na opção 3 de tools/testes.ps1.
 # Disparado sob demanda por tools/testes.ps1 (opção 2) ou pela aba Actions.
 on:
   workflow_dispatch:
@@ -20,6 +22,8 @@ jobs:
     timeout-minutes: 120
     env:
       SOMNING_MODELS_DIR: ${{ github.workspace }}\.models
+      # Sem GPU: o Vulkan da máquina é emulado na CPU e leva ~30 s por ditado. A CPU de verdade é bem mais rápida.
+      SOMNING_ENGINE_BACKEND: cpu
     steps:
       - name: Baixar o código
         uses: actions/checkout@v4
@@ -51,7 +55,7 @@ jobs:
       - name: Testes de área de trabalho
         shell: pwsh
         run: |
-          & .\tests\Somning.Integration.Tests\bin\Release\net10.0-windows\Somning.Integration.Tests.exe -noColor -longRunning 120 -trait "Category=Desktop" -xml testes-desktop.xml
+          & .\tests\Somning.Integration.Tests\bin\Release\net10.0-windows\Somning.Integration.Tests.exe -noColor -longRunning 120 -trait "Category=Desktop" -notrait "Category=Performance" -xml testes-desktop.xml
           if ($LASTEXITCODE -ne 0) { throw "Testes de área de trabalho falharam (código $LASTEXITCODE)." }
 
       - name: Guardar o resultado e os logs

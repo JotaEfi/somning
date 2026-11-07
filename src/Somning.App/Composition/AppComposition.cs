@@ -365,12 +365,25 @@ public sealed class AppComposition : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// The backend the engine starts with. Test builds accept SOMNING_ENGINE_BACKEND=cpu|vulkan: CI machines have no
+    /// GPU but expose a software Vulkan device that the engine would pick, which is far slower than the real CPU path.
+    /// </summary>
+    private static string StartupBackend()
+    {
+#if SOMNING_TEST_HARNESS
+        var forced = Environment.GetEnvironmentVariable("SOMNING_ENGINE_BACKEND");
+        if (forced is "cpu" or "vulkan") return forced;
+#endif
+        return EngineDefaults.Backend;
+    }
+
     private async Task RunEngineStartAsync()
     {
         try
         {
             await EnsureModelAvailableAsync(lifetime.Token).ConfigureAwait(false);
-            await Engine.StartAsync(EngineDefaults.Backend, lifetime.Token).ConfigureAwait(false);
+            await Engine.StartAsync(StartupBackend(), lifetime.Token).ConfigureAwait(false);
             if (Engine.Status == EngineStatus.Ready && Engine.Session is { } session)
             {
                 Log.Information("engine ready backend={Backend} load_ms={LoadMs} warm_ms={WarmMs}",

@@ -9,7 +9,8 @@
 
     1  Local, sem os testes de área de trabalho. Pode usar o PC à vontade enquanto roda.
     2  Igual ao 1 e, em paralelo, os testes de área de trabalho numa máquina Windows do GitHub Actions.
-       Requer o gh autenticado e o commit atual enviado (push) ao GitHub.
+       Requer o gh autenticado e o commit atual enviado (push) ao GitHub. Lá não há GPU, então os testes
+       de desempenho (Category=Performance: metas de latência e memória) ficam de fora; só a opção 3 os roda.
     3  Local, todos os testes. Use só quando estiver longe do computador.
 
 .EXAMPLE
@@ -30,7 +31,7 @@ function Read-Opcao {
     Write-Host ''
     Write-Host 'Como rodar os testes de área de trabalho (foco, teclado, área de transferência)?'
     Write-Host '  1  Pular: rodar só o resto, localmente (pode usar o PC)'
-    Write-Host '  2  No GitHub Actions, em paralelo com o resto local (pode usar o PC)'
+    Write-Host '  2  No GitHub Actions, em paralelo com o resto local (pode usar o PC; sem os testes de desempenho)'
     Write-Host '  3  Localmente, junto com o resto (NÃO use o PC até terminar)'
     while ($true) {
         $answer = (Read-Host 'Opção [1/2/3]').Trim()

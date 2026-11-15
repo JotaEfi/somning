@@ -97,7 +97,8 @@ public sealed class EngineSupervisor(string? enginePath = null, SupervisorOption
             RedirectStandardOutput = true, RedirectStandardError = true, StandardInputEncoding = new UTF8Encoding(false),
             StandardOutputEncoding = new UTF8Encoding(false), StandardErrorEncoding = new UTF8Encoding(false)
         };
-        string model = backend == "cpu" ? EngineDefaults.CpuFallbackModelFile : EngineDefaults.ModelFile;
+        string model = EngineDefaults.ModelFileFor(backend, modelsDir);
+        Log.Information("Engine worker starting: backend {Backend}, model {Model}", backend, model);
         foreach (var arg in new[] { "--backend", backend, "--model", Path.Combine(modelsDir, model),
             "--vad", Path.Combine(modelsDir, EngineDefaults.VadModelFile), "--flash-attn",
             EngineDefaults.FlashAttention ? "on" : "off", "--threads", EngineDefaults.Threads.ToString(),

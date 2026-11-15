@@ -13,4 +13,13 @@ public static class EngineDefaults
     public const string Language = "pt", InitialPrompt = "Olá, tudo bem? Vamos começar a reunião às 10h.";
     public const double MinDurationSeconds = 0.4;
     public const float NoSpeechThreshold = 0.6f;
+
+    /// <summary>
+    /// Model file a worker should load. The CPU fallback uses the q8 model only when it is installed (it is optional
+    /// and not downloaded by default); otherwise it reuses the required q5 model, so a restart never depends on an optional file.
+    /// </summary>
+    public static string ModelFileFor(string backend, string modelsDir) =>
+        backend == "cpu" && System.IO.File.Exists(System.IO.Path.Combine(modelsDir, CpuFallbackModelFile))
+            ? CpuFallbackModelFile
+            : ModelFile;
 }

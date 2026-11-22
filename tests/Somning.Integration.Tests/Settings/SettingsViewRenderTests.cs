@@ -1,10 +1,9 @@
-﻿using System.Windows;
-using System.Runtime.InteropServices;
+using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Interop;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using Somning.Core.Overlay;
 using Somning.Core.Settings;
 using Somning.Platform.Windows.Audio;
 using Somning.Platform.Windows.Settings;
@@ -149,7 +148,7 @@ public sealed class SettingsViewRenderTests
     }
 
     [Fact]
-    public void NativeHiddenWindow_ClipsActualHwndCorners()
+    public void Window_UsesDwmBackdropMode_WithRoundedGlassAndSolidFallback()
     {
         var result = RunSta(() =>
         {
@@ -157,37 +156,132 @@ public sealed class SettingsViewRenderTests
             {
                 SizeToContent = SizeToContent.Manual, Width = 456, Height = 700
             };
-            var region = CreateRectRgn(0, 0, 0, 0);
             try
             {
-                var hwnd = new WindowInteropHelper(view).EnsureHandle(); // Hidden: never Show/Activate.
+                view.UseBackdropFill(true);
+                var shadowWhenAcrylic = ((UIElement)view.FindName("ShadowHost")).Visibility;
+                var acrylicFill = ReferenceEquals(view.Resources["GlassFill"], view.Resources["GlassFillAcrylic"]);
+
                 var root = (FrameworkElement)view.Content;
-                root.Measure(new Size(456, 700));
-                root.Arrange(new Rect(0, 0, 456, 700));
-                root.UpdateLayout();
-                view.UseBackdropFill(acrylic: true);
-                var kind = GetWindowRgn(hwnd, region);
-                return (kind, cornerInside: PtInRegion(region, 0, 0), centerInside: PtInRegion(region, 228, 350));
+                view.Content = null;
+                var host = new System.Windows.Controls.Border { Child = root, Width = 456, Height = 700 };
+                TextElementSetup(host, view);
+                host.Measure(new Size(456, 700));
+                host.Arrange(new Rect(0, 0, 456, 700));
+                host.UpdateLayout();
+                var glass = (FrameworkElement)view.FindName("GlassBody");
+                var glassBounds = glass.TransformToAncestor(host).TransformBounds(new Rect(0, 0, glass.ActualWidth, glass.ActualHeight));
+                var bitmap = new RenderTargetBitmap(456, 700, 96, 96, PixelFormats.Pbgra32);
+                bitmap.Render(host);
+                var corner = ReadPixel(bitmap, (int)glassBounds.Left + 1, (int)glassBounds.Top + 1);
+                var centre = ReadPixel(bitmap, (int)(glassBounds.Left + glassBounds.Width / 2), (int)(glassBounds.Top + glassBounds.Height / 2));
+
+                view.UseBackdropFill(false);
+                var shadowWhenSolid = ((UIElement)view.FindName("ShadowHost")).Visibility;
+                var solidFill = ReferenceEquals(view.Resources["GlassFill"], view.Resources["GlassFillSolid"]);
+
+                return (view.AllowsTransparency, shadowWhenAcrylic, acrylicFill, shadowWhenSolid, solidFill,
+                    cornerAlpha: corner[3], centreAlpha: centre[3]);
             }
             finally
             {
-                if (region != 0) DeleteObject(region);
                 view.Close();
             }
         });
-        Assert.NotEqual(0, result.kind);
-        Assert.False(result.cornerInside);
-        Assert.True(result.centerInside);
+        Assert.True(result.AllowsTransparency);
+        Assert.Equal(Visibility.Collapsed, result.shadowWhenAcrylic);
+        Assert.True(result.acrylicFill);
+        Assert.Equal(Visibility.Visible, result.shadowWhenSolid);
+        Assert.True(result.solidFill);
+        Assert.Equal(0, result.cornerAlpha);   // outside the 22 px radius the WPF layer is transparent
+        Assert.InRange(result.centreAlpha, (byte)90, (byte)180); // translucent veil over DWM blur
     }
 
-    [DllImport("gdi32.dll")]
-    private static extern nint CreateRectRgn(int left, int top, int right, int bottom);
-    [DllImport("user32.dll")]
-    private static extern int GetWindowRgn(nint hwnd, nint region);
-    [DllImport("gdi32.dll")]
-    private static extern bool PtInRegion(nint region, int x, int y);
-    [DllImport("gdi32.dll")]
-    private static extern bool DeleteObject(nint region);
+    [Fact]
+    public void SettingsGelBackdrop_RendersDarkTranslucentGelWithRoundedCorners()
+    {
+        var darkBg = new BackdropTexture(64, 64) { OriginX = 0, OriginY = 0, PixelsPerTexelX = 4f, PixelsPerTexelY = 4f };
+        darkBg.Fill(0.05f, 0.08f, 0.12f);
+        var whiteBg = new BackdropTexture(64, 64) { OriginX = 0, OriginY = 0, PixelsPerTexelX = 4f, PixelsPerTexelY = 4f };
+        whiteBg.Fill(1f, 1f, 1f);
+
+        var bounds = new BackdropRegion(0, 0, 200, 160);
+        var neutralDark = SettingsGelBackdrop.RenderGel(darkBg, bounds, 1f, 22f, GelBackdropState.Neutral);
+        var neutralWhite = SettingsGelBackdrop.RenderGel(whiteBg, bounds, 1f, 22f, GelBackdropState.Neutral);
+
+        // Corners outside 22 px radius must be completely transparent; interior opaque.
+        Assert.Equal(0, ReadPixel(neutralWhite, 1, 1)[3]);
+        Assert.Equal(255, ReadPixel(neutralWhite, 100, 80)[3]);
+
+        // Translucent over white: brighter than over dark, yet darkened enough for light UI text.
+        var darkCentre = ReadPixel(neutralDark, 100, 80);
+        var whiteCentre = ReadPixel(neutralWhite, 100, 80);
+        Assert.True(whiteCentre[2] > darkCentre[2] + 20, "White background should shine through the translucent gel.");
+        Assert.True(whiteCentre[2] < 130, "Dark gel must stay dark enough for light text even on pure white.");
+    }
+
+    private static byte[] ReadPixel(BitmapSource bitmap, int x, int y)
+    {
+        var pixel = new byte[4];
+        bitmap.CopyPixels(new Int32Rect(x, y, 1, 1), pixel, 4, 0);
+        return pixel;
+    }
+
+    [Fact]
+    public void Window_CanResize_WithMinimumSizeAndGrip()
+    {
+        var result = RunSta(() =>
+        {
+            var view = new SettingsView(new UserSettings(), Devices, new FakeProtector());
+            return (view.MinWidth, view.MinHeight, maxHeight: view.MaxHeight, workHeight: SystemParameters.WorkArea.Height, hasGrip: view.FindName("ResizeGrip") is not null);
+        });
+        Assert.Equal(400, result.MinWidth);
+        Assert.Equal(380, result.MinHeight);
+        Assert.True(result.maxHeight <= result.workHeight);
+        Assert.True(result.hasGrip);
+    }
+
+    [Fact]
+    public void ResponsiveLayout_SwitchesBetweenCompactAndThreeColumnWide()
+    {
+        var result = RunSta(() =>
+        {
+            var view = new SettingsView(new UserSettings(), Devices, new FakeProtector());
+            var root = (FrameworkElement)view.Content;
+            view.Content = null;
+            var host = new Border { Child = root, Width = 456, Height = 700 };
+            TextElementSetup(host, view);
+            host.Measure(new Size(456, 700));
+            host.Arrange(new Rect(0, 0, 456, 700));
+            host.UpdateLayout();
+
+            var hotkeysGrid = (Grid)view.FindName("HotkeysGrid");
+            var behaviorSection = (FrameworkElement)view.FindName("BehaviorSection");
+            var activate = (UIElement)view.FindName("ActivateHotkeyButton");
+            var cancel = (UIElement)view.FindName("CancelHotkeyButton");
+            var confirm = (UIElement)view.FindName("ConfirmHotkeyButton");
+            var compactCols = hotkeysGrid.ColumnDefinitions.Count;
+            var compactBehaviorCol = Grid.GetColumn(behaviorSection);
+
+            host.Width = 760;
+            host.Measure(new Size(760, 700));
+            host.Arrange(new Rect(0, 0, 760, 700));
+            host.UpdateLayout();
+
+            var wideCols = hotkeysGrid.ColumnDefinitions.Count;
+            var wideBehaviorCol = Grid.GetColumn(behaviorSection);
+            var buttonRows = (Grid.GetRow(activate), Grid.GetRow(cancel), Grid.GetRow(confirm));
+            var buttonCols = (Grid.GetColumn(activate), Grid.GetColumn(cancel), Grid.GetColumn(confirm));
+            return (compactCols, compactBehaviorCol, wideCols, wideBehaviorCol, buttonRows, buttonCols);
+        });
+
+        Assert.Equal(2, result.compactCols);
+        Assert.Equal(0, result.compactBehaviorCol);
+        Assert.Equal(5, result.wideCols); // 3 button columns + 2 spacers
+        Assert.Equal(2, result.wideBehaviorCol);
+        Assert.Equal((1, 1, 1), result.buttonRows);
+        Assert.Equal((0, 2, 4), result.buttonCols);
+    }
 
     [Fact]
     public void RenderOffscreen_WritesPreviewPng()

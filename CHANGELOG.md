@@ -1,5 +1,10 @@
 ﻿# Histórico de versões
 
+## 1.0.9 — Nova aba de Configurações (2026-11-22)
+
+- **Configurações redimensionáveis e responsivas:** a janela de Configurações agora pode ser redimensionada livremente pelo canto inferior direito (`MinWidth 400`, `MinHeight 380`), com barra de rolagem fina e layout responsivo em 3 colunas a partir de `720 px` de largura.
+- **Novo fundo de vidro líquido escurecido:** substituído o antigo blur DWM por um fundo translúcido escurecido com desfoque gaussiano, menisco 3D, brilho especular, dispersão cromática e cantos arredondados de `22 px` sem vazamento de borda no Windows 10, com inércia suave da luz ao arrastar.
+
 ## 1.0.8 — Iniciar com o Windows (2026-11-07)
 
 - **Iniciar com o Windows:** a opção voltou a funcionar. O Somning só gravava a entrada de inicialização ao mudar a opção; se algo a apagasse, a opção seguia marcada mas o Somning não abria com o Windows nem aparecia no Gerenciador de Tarefas. Agora, ao abrir, ele recria a entrada sempre que a opção está ligada. Desativar o Somning pela aba **Inicializar** do Gerenciador de Tarefas continua sendo respeitado.
